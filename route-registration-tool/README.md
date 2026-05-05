@@ -120,6 +120,31 @@ Road Selection Tool is a tool that allows you to select roads from a map and sav
     docker compose up -d
     ```
 
+## Health Probes
+
+The service exposes two probe endpoints used by Cloud Run and Cloud Monitoring.
+Both are unauthenticated, side-effect free, and not rate-limited; they must
+stay that way.
+
+- `GET /health/live` — Liveness probe consumed by Cloud Run to decide whether
+  to restart the container. Returns `200 {"status":"ok"}` unconditionally.
+- `GET /health/ready` — Readiness probe polled every minute by a Cloud
+  Monitoring uptime check. Verifies all critical dependencies in parallel
+  with a 2-second per-check timeout:
+  - **database**: `SELECT 1` against the shared async connection pool.
+  - **roads_api**: mints an ADC OAuth token (every backend Google Maps
+    Platform call requires this; reaches `oauth2.googleapis.com`).
+  - **bigquery**: `list_datasets(max_results=1)` against the ADC home
+    project (metadata call, no query cost).
+
+  Returns `200` with per-check latency on success, or `503` with a short
+  non-sensitive error string (exception class name or `timeout after
+  2000ms`) if any critical dependency is failing.
+
+Do not modify these endpoints to add writes, "last seen" updates, audit
+logging, authentication, or rate limiting — doing so will either invalidate
+the uptime signal or cause false-positive outage alerts.
+
 ## Deployment
 
 ### Option 1: Secured Deployment (Recommended)
