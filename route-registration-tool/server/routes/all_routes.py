@@ -37,6 +37,7 @@ from .stretch_roads import router as stretch_roads_router
 from .bigquery import router as bigquery_router
 from .client_config import router as client_config_router
 from .sessions import router as sessions_router
+from .health import router as health_router
 
 # Create a single router that includes all others
 router = APIRouter()
@@ -64,3 +65,4 @@ router.include_router(import_project_router, prefix="", tags=["Import Project"])
 router.include_router(stretch_roads_router, prefix="", tags=["Stretch Roads"])
 router.include_router(bigquery_router, prefix="", tags=["BigQuery"])
 router.include_router(sessions_router, prefix="", tags=["Sessions"])
+router.include_router(health_router, prefix="", tags=["Health"])
