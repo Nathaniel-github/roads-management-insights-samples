@@ -6,7 +6,7 @@ set -e
 
 # --- Configuration Variables ---
 echo "========================================="
-echo "BigQuery Setup for Roads Sync Tool"
+echo "BigQuery Setup for Roads Sync Tool (Optimized)"
 echo "========================================="
 echo ""
 
@@ -49,23 +49,26 @@ else
     echo "Table routes_status created successfully."
 fi
 
-echo "[4/4] Creating table: recent_roads_data..."
+echo "[4/4] Creating table: recent_roads_data with Partitioning & Clustering..."
 if bq ls --project_id="$PROJECT_ID" "$DATASET_NAME" | grep -q "recent_roads_data"; then
     echo "Table recent_roads_data already exists, skipping."
 else
     SCHEMA_JSON='[
-      {"name": "selected_route_id", "type": "STRING", "mode": "NULLABLE"},
-      {"name": "display_name", "type": "STRING", "mode": "NULLABLE"},
-      {"name": "route_geometry", "type": "GEOGRAPHY", "mode": "NULLABLE"},
-      {"name": "record_time", "type": "TIMESTAMP", "mode": "NULLABLE"},
-      {"name": "duration_in_seconds", "type": "INT64", "mode": "NULLABLE"},
-      {"name": "static_duration_in_seconds", "type": "INT64", "mode": "NULLABLE"},
+      {"name": "selected_route_id", "type": "STRING", "mode": "NULLABLE", "description": "The unique identifier for the SelectedRoute resource."},
+      {"name": "display_name", "type": "STRING", "mode": "NULLABLE", "description": "User-provided descriptive name for the route."},
+      {"name": "record_time", "type": "TIMESTAMP", "mode": "NULLABLE", "description": "UTC timestamp when the near real-time route data was computed."},
+      {"name": "duration_in_seconds", "type": "FLOAT", "mode": "NULLABLE", "description": "Real-time traffic-aware duration in seconds."},
+      {"name": "static_duration_in_seconds", "type": "FLOAT", "mode": "NULLABLE", "description": "Traffic-unaware (static) duration in seconds."},
+      {"name": "route_geometry", "type": "GEOGRAPHY", "mode": "NULLABLE", "description": "Traffic-aware optimal path geometry."},
+      {"name": "road_segment_ids", "type": "STRING", "mode": "REPEATED", "description": "Place IDs along the route in topological order."},
       {
         "name": "speed_reading_intervals",
         "type": "RECORD",
         "mode": "REPEATED",
+        "description": "Intervals representing traffic density segments across the route.",
         "fields": [
-          {"name": "speed", "type": "STRING", "mode": "NULLABLE"}
+          {"name": "interval_coordinates", "type": "GEOGRAPHY", "mode": "REPEATED", "description": "Coordinates representation for this speed interval."},
+          {"name": "speed", "type": "STRING", "mode": "NULLABLE", "description": "The categorical speed classification: NORMAL, SLOW, or TRAFFIC_JAM."}
         ]
       }
     ]'
@@ -74,15 +77,25 @@ else
     TEMP_SCHEMA_FILE=$(mktemp)
     echo "$SCHEMA_JSON" > "$TEMP_SCHEMA_FILE"
 
-    bq mk -t "$PROJECT_ID:$DATASET_NAME.recent_roads_data" "$TEMP_SCHEMA_FILE"
+    # Create table with:
+    # 1. Day Partitioning on record_time
+    # 2. 60-Day automatic partition expiration (sliding window retention)
+    # 3. Clustering on selected_route_id and record_time
+    bq mk \
+      --table \
+      --time_partitioning_field=record_time \
+      --time_partitioning_type=DAY \
+      --time_partitioning_expiration=5184000 \
+      --clustering_fields=selected_route_id,record_time \
+      "$PROJECT_ID:$DATASET_NAME.recent_roads_data" \
+      "$TEMP_SCHEMA_FILE"
     
-    # Clean up temp file
     rm "$TEMP_SCHEMA_FILE"
-    echo "Table recent_roads_data created successfully."
+    echo "Table recent_roads_data created with optimization successfully."
 fi
 
 echo ""
 echo "========================================="
 echo "Setup Complete!"
-echo "The dataset $DATASET_NAME and its tables are ready."
+echo "Optimized tables and sliding-window partitions are ready."
 echo "========================================="
