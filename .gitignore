@@ -3,3 +3,7 @@
 .venv
 **/.DS_Store
 **/dist
+
+# Workspace task tracking & work logs
+TASKS.md
+WORKLOG.md
