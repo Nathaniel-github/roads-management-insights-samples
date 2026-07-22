@@ -56,6 +56,10 @@ def init_db_postgres() -> None:
     # get_database_urls() returns a SQLAlchemy sync URL (postgresql+psycopg://...),
     # but psycopg.connect expects a standard libpq DSN (postgresql://...).
     u = make_url(sync_url)
+    if not u.drivername.startswith("postgresql"):
+        logger.info("DATABASE_URL is not PostgreSQL. Skipping Postgres migrations.")
+        return
+
     if u.drivername == "postgresql+psycopg":
         u = u.set(drivername="postgresql")
     psycopg_dsn = u.render_as_string(hide_password=False)

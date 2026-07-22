@@ -147,13 +147,26 @@ the uptime signal or cause false-positive outage alerts.
 
 ## Deployment
 
+### BigQuery Setup
+
+The route synchronization background process expects a BigQuery dataset to exist in the `US` location named `historical_roads_data` with specific tables and schema (including `GEOGRAPHY` types for spatial functions).
+
+We have provided a setup script to automate this.
+
+```bash
+# 1. Make the script executable
+chmod +x bq_setup.sh
+
+# 2. Run the script (it will prompt you for your configuration)
+./bq_setup.sh
+```
+
 ### Option 1: Secured Deployment (Recommended)
 
 #### Automated via Cloud Build
 This project includes a `cloudbuild.yaml` file to automate deployment with security best practices. It uses **Google Cloud Secret Manager** to securely manage the **browser-side** Maps JavaScript API key. Backend Google Maps Platform calls (Roads API, route selection, etc.) authenticate via the Cloud Run service account — no API key is involved server-side.
 
-1.  **Store your Maps JS API Key in Secret Manager** (used only for the
-    frontend Maps JS loader):
+1.  **Store your Maps JS API Key in Secret Manager** (used only for the frontend Maps JS loader):
     ```bash
     echo -n "YOUR_API_KEY" | gcloud secrets create ROUTE_REGISTRATION_MAPS_API_KEY --data-file=-
     ```
@@ -204,6 +217,7 @@ gcloud run deploy route-registration-tool \
 ```
 
 ### Required Permissions
+
 The Service Account used for deployment authenticates **all** backend Google Maps Platform API calls (Roads API, route selection, etc.) via Application Default Credentials. It needs the following roles:
 - `roles/bigquery.jobUser` (Project level)
 - `roles/bigquery.dataViewer` (Restricted to the RMI BigQuery dataset resource only)
@@ -212,5 +226,12 @@ The Service Account used for deployment authenticates **all** backend Google Map
 - `roles/roads.roadsSelectionAdmin` (Project level)
 - `roles/serviceusage.serviceUsageConsumer` (Project level — required because backend calls set `X-Goog-User-Project` for quota attribution)
 - `roles/secretmanager.secretAccessor` (Restricted to the `ROUTE_REGISTRATION_MAPS_API_KEY` secret resource only — for the browser-side Maps JS key)
+- A Custom IAM Role containing the following permissions:
+  - `roads.selectedRoutes.batchCreate`
+  - `roads.selectedRoutes.create`
+  - `roads.selectedRoutes.delete`
+  - `roads.selectedRoutes.get`
+  - `roads.selectedRoutes.list`
 
 The Roads API must be enabled on the **ADC principal's home project** — that is the project all backend Google Maps Platform calls bill quota to (via the `X-Goog-User-Project` header), regardless of which app project is selected in the UI.
+
