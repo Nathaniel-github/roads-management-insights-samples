@@ -27,15 +27,14 @@ ENV PATH="$POETRY_HOME/bin:$PATH"
 
 # Install system build dependencies and GDAL
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
     gdal-bin \
     libgdal-dev \
     build-essential \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install poetry
-RUN curl -sSL https://install.python-poetry.org | python3 -
+# Install poetry via pip
+RUN pip install --no-cache-dir "poetry==${POETRY_VERSION}"
 
 # Copy poetry files separately for better caching
 COPY pyproject.toml poetry.lock ./

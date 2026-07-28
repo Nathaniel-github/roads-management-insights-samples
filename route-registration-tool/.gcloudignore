@@ -1,1 +1,13 @@
+.gcloudignore
+.git
+.gitignore
+.venv
+.DS_Store
+**/.DS_Store
 /ui/node_modules
+/ui/dist
+__pycache__
+*.pyc
+TASKS.md
+WORKLOG.md
+PROJECT*.md
