@@ -155,6 +155,8 @@ async def get_roads_tile(
             }
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"[TILE ERROR] Failed to generate roads tile: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate roads tile")
@@ -418,6 +420,8 @@ async def get_routes_tile(
             },
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"[ROUTE TILE ERROR] Failed to generate routes tile: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate routes tile")

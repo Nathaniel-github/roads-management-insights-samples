@@ -283,6 +283,8 @@ async def get_projects_paginated(
             ),
             route_summaries={str(pid): RoutesSummary(**vals) for pid, vals in summaries.items()},
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Error fetching paginated projects")
         raise HTTPException(status_code=500, detail="Failed to fetch projects")
@@ -326,6 +328,8 @@ async def get_project_routes_summary(project_id: int):
                 summary[row_type] = row["count"]
         
         return RoutesSummary(**summary)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Error fetching routes summary for project %s", project_id)
         logger.error(f"Error fetching routes summary for project {project_id}: {str(e)}")

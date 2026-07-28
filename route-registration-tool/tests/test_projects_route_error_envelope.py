@@ -237,3 +237,15 @@ async def test_format_and_create_success_returns_inserted_ids(monkeypatch):
     out = await format_and_create_projects(req)
     assert out.inserted_ids == [111, 222]
 
+
+@pytest.mark.asyncio
+async def test_get_projects_paginated_invalid_session_id_returns_400():
+    from server.routes.projects import get_projects_paginated
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_projects_paginated(session_id=";'")
+
+    assert exc_info.value.status_code == 400
+    assert "Invalid session_id" in exc_info.value.detail
+
+
