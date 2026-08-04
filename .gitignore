@@ -1,8 +1,32 @@
-**/__pycache__
-.env
-.venv
+# Python & Poetry
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.venv/
+**/.poetry_cache/
+**/.poetry_config/
+**/*.egg-info/
+**/.eggs/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# Node & JS Build
+**/node_modules/
+**/dist/
+**/.cache/
+
+# Environment & Logs
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+
+# OS & Editor
 **/.DS_Store
-**/dist
+**/.vscode/
+**/.idea/
 
 # Workspace task tracking & work logs
 TASKS.md

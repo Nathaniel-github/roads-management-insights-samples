@@ -1,0 +1,12 @@
+[
+  {
+    "eval_id": "1",
+    "prompt": "What agent are you?",
+    "reference": "I am the RMI Agent.",
+    "autorater": "golden_match",
+    "tags": [
+      "smoketest"
+    ]
+  }
+]
+

@@ -1,4 +1,21 @@
-**/__pycache__
+# Python & Poetry
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.venv/
+.poetry_cache/
+.poetry_config/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment & Logs
 .env
-.venv
+.env.*
+!.env.example
+*.log
+
+# OS & Editor
 **/.DS_Store

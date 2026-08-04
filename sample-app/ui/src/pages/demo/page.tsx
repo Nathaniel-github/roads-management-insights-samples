@@ -35,6 +35,7 @@ import RealtimeMonitoringPage from "../../usecases/realtime-monitoring/page"
 import { RouteReliabilityPage } from "../../usecases/route-reliability/page"
 import Loader from "./loader"
 import UnifiedMap from "./unified-map"
+import { AgentSidePanel } from "../../components/agent-side-panel"
 
 const mapReveal = keyframes`
   0% {
@@ -126,6 +127,7 @@ const DemoContent: React.FC = () => {
       </MapContainer>
       <FloatingPanel />
       <RightFloatingPanel />
+      <AgentSidePanel />
       <MapViewController />
       <QuickCompareButton />
       <ComparisonModeControls />

@@ -1,0 +1,51 @@
+[
+  {
+    "eval_id": "data_scientist_outlier_detection",
+    "prompt": "Which travel time records for route 'route-4202493217' between '2025-10-01' and '2025-11-01' are statistical outliers, defined as being beyond 1.5 * IQR of duration (calculating Q1 and Q3 using 100 quantiles or PERCENTILE_CONT)? Return the record_time, duration_in_seconds, lower_bound, upper_bound, and outlier_type (labeled as 'High_Outlier' or 'Low_Outlier').",
+    "sql": [
+      "WITH raw_history AS (",
+      "  SELECT",
+      "    selected_route_id,",
+      "    record_time,",
+      "    duration_in_seconds",
+      "  FROM `boston_oct_2025_sample_data.historical_travel_time`",
+      "  WHERE selected_route_id = 'route-4202493217'",
+      "    AND record_time BETWEEN '2025-10-01' AND '2025-11-01'",
+      "),",
+      "stats AS (",
+      "  SELECT",
+      "    APPROX_QUANTILES(duration_in_seconds, 100)[OFFSET(25)] AS q1,",
+      "    APPROX_QUANTILES(duration_in_seconds, 100)[OFFSET(75)] AS q3",
+      "  FROM raw_history",
+      "),",
+      "outlier_thresholds AS (",
+      "  SELECT",
+      "    q1,",
+      "    q3,",
+      "    (q3 - q1) AS iqr,",
+      "    q1 - (1.5 * (q3 - q1)) AS lower_bound,",
+      "    q3 + (1.5 * (q3 - q1)) AS upper_bound",
+      "  FROM stats",
+      ")",
+      "SELECT",
+      "  h.record_time,",
+      "  h.duration_in_seconds,",
+      "  t.lower_bound,",
+      "  t.upper_bound,",
+      "  CASE",
+      "    WHEN h.duration_in_seconds > t.upper_bound THEN 'High_Outlier'",
+      "    WHEN h.duration_in_seconds < t.lower_bound THEN 'Low_Outlier'",
+      "  END as outlier_type",
+      "FROM raw_history h, outlier_thresholds t",
+      "",
+      "WHERE (h.duration_in_seconds > t.upper_bound OR h.duration_in_seconds < t.lower_bound)",
+      "ORDER BY h.record_time DESC;"
+    ],
+    "dataset_id": "boston_oct_2025_sample_data",
+    "tags": [
+      "data_scientist",
+      "sql_data_eval"
+    ],
+    "autorater": "sql_data"
+  }
+]

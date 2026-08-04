@@ -34,6 +34,16 @@ from backend.fetch_data import (
 )
 from backend.env_manager import create_ui_env_file
 
+import json
+import uuid
+import asyncio
+from sse_starlette.sse import EventSourceResponse
+from absl import flags
+from google.genai import types
+from google.adk import runners
+from google.adk.agents.run_config import StreamingMode
+from backend.rmi_agent.agents.rmi_agent import ROOT_AGENT
+
 # read .env file in os environment
 load_dotenv()
 
@@ -284,6 +294,73 @@ async def get_city_metadata():
         raise HTTPException(status_code=500, detail="Error fetching city metadata")
 
     return city_metadata
+
+
+@app.get("/api/agent/stream")
+async def stream_agent(message: str, city: str = "boston"):
+    """Server-Sent Events endpoint for RMI Agent streaming responses."""
+    async def event_generator():
+        try:
+            try:
+                flags.FLAGS([""])
+            except Exception:
+                pass
+
+            session_id = f"session-{uuid.uuid4().hex}"
+            runner = runners.InMemoryRunner(agent=ROOT_AGENT)
+            await runner.session_service.create_session(
+                app_name=runner.app_name, session_id=session_id, user_id="user"
+            )
+
+            run_config = runners.RunConfig(
+                streaming_mode=StreamingMode.SSE
+            )
+
+            yield {
+                "event": "status",
+                "data": json.dumps({"status": f"Querying BigQuery ({city})..."})
+            }
+
+            async for event in runner.run_async(
+                user_id="user",
+                session_id=session_id,
+                new_message=types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text=message)],
+                ),
+                run_config=run_config,
+            ):
+                if event.content and event.content.parts:
+                    for part in event.content.parts:
+                        if getattr(part, "thought", False) and part.text:
+                            yield {
+                                "event": "thinking",
+                                "data": json.dumps({"text": part.text})
+                            }
+                        elif getattr(part, "function_call", None):
+                            yield {
+                                "event": "tool_call",
+                                "data": json.dumps({
+                                    "name": part.function_call.name,
+                                    "args": dict(part.function_call.args) if part.function_call.args else {}
+                                })
+                            }
+                        elif part.text and not getattr(part, "thought", False):
+                            yield {
+                                "event": "text_chunk",
+                                "data": json.dumps({"text": part.text})
+                            }
+            yield {
+                "event": "done",
+                "data": json.dumps({"status": "SUCCESS"})
+            }
+        except Exception as e:
+            yield {
+                "event": "error",
+                "data": json.dumps({"message": str(e)})
+            }
+
+    return EventSourceResponse(event_generator())
 
 
 @app.get("/{full_path:path}", response_class=HTMLResponse)
