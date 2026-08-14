@@ -24,7 +24,8 @@ dependencies = [
     "shapely",
     "geopandas (>=1.1.1,<2.0.0)",
     "absl-py (>=2.0.0)",
-    "google-adk",
+    "google-adk (>=1.28.1)",
+    "google-cloud-dataplex",
     "google-genai",
     "sse-starlette (>=2.0.0)"
 ]

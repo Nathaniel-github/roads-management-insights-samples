@@ -40,6 +40,7 @@ import { selectRoute } from "../usecases/realtime-monitoring/helper"
 import { getAvailableDays } from "../utils/formatters"
 
 export interface AppState {
+  activeTab: "dashboard" | "agent"
   availableCities: Record<string, City>
   selectedCity: City
   selectedRouteSegment: RouteSegment | null
@@ -163,6 +164,7 @@ export interface AppState {
   isComparisonApplied: boolean
   alerts: RouteAlert[] | RouteAlertWithPosition[] | null
   mapData: MapData | null
+  agentRenderedRoutes: RouteSegment[] | null
   shouldUseGreyRoutes: boolean
 
   routeMetrics: {
@@ -176,6 +178,7 @@ export interface AppState {
 }
 
 interface AppActions {
+  setActiveTab: (tab: "dashboard" | "agent") => void
   loadCities: (cities: Record<string, City>) => void
   setUsecase: (usecase: Usecase) => void
   setSelectedRouteSegment: (route: RouteSegment | null) => void
@@ -244,7 +247,7 @@ interface AppActions {
   setFloatingPanelExpanded: (isExpanded: boolean) => void
   setPreviousFloatingPanelExpanded: (isExpanded: boolean) => void
 
-  setAlerts: (alerts: RouteAlert[] | RouteAlertWithPosition[]) => void
+  setAlerts: (alerts: RouteAlert[] | RouteAlertWithPosition[] | null) => void
   setQueryState: (
     queryKey: keyof AppState["queries"],
     status: "pending" | "loading" | "success" | "error",
@@ -275,6 +278,7 @@ interface AppActions {
     layout: "main" | "comparison",
     data: AverageTravelTimeData,
   ) => void
+  setAgentRenderedRoutes: (routes: RouteSegment[] | null) => void
 }
 
 const FALLBACK_CITY: City = {
@@ -336,6 +340,7 @@ export const useAppStore = create(
   combine(
     {
       demoMode: false,
+      activeTab: "dashboard" as "dashboard" | "agent",
       alerts: null,
       availableCities: { fallback: FALLBACK_CITY },
       usecase: "realtime-monitoring" as Usecase,
@@ -444,6 +449,7 @@ export const useAppStore = create(
       previousPanelStates: null,
       mapMarker: null,
       mapData: null,
+      agentRenderedRoutes: null,
       shouldUseGreyRoutes: false,
 
       routeMetrics: {
@@ -457,6 +463,20 @@ export const useAppStore = create(
     } as AppState,
     (set, get) =>
       ({
+        setActiveTab: (tab: "dashboard" | "agent") => {
+          set({ activeTab: tab })
+          if (tab === "agent") {
+            const state = get()
+            const boston = Object.values(state.availableCities).find(
+              (c) =>
+                c.id.toLowerCase() === "boston" ||
+                c.name.toLowerCase() === "boston",
+            )
+            if (boston) {
+              get().selectCity(boston.id)
+            }
+          }
+        },
         loadCities: (cities: Record<string, City>) => {
           const currentState = get()
 
@@ -671,7 +691,7 @@ export const useAppStore = create(
             )
           }
         },
-        setAlerts: (alerts: RouteAlert[] | RouteAlertWithPosition[]) =>
+        setAlerts: (alerts: RouteAlert[] | RouteAlertWithPosition[] | null) =>
           set({ alerts: alerts }),
 
         setRef: (name, ref) => set({ refs: { ...get().refs, [name]: ref } }),
@@ -1817,6 +1837,8 @@ export const useAppStore = create(
           }),
 
         setMapData: (data: MapData) => set({ mapData: data }),
+        setAgentRenderedRoutes: (routes: RouteSegment[] | null) =>
+          set({ agentRenderedRoutes: routes }),
         setShouldUseGreyRoutes: (shouldUse: boolean) =>
           set({ shouldUseGreyRoutes: shouldUse }),
         setTimeReplayState: (state: Partial<AppState["timeReplayState"]>) => {

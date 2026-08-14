@@ -28,45 +28,37 @@ import {
 import { styled } from "@mui/material/styles"
 import SmartToyIcon from "@mui/icons-material/SmartToy"
 import CloseIcon from "@mui/icons-material/Close"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import SendIcon from "@mui/icons-material/Send"
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome"
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore"
 import ExpandLessIcon from "@mui/icons-material/ExpandLess"
 import { useAppStore } from "../../store"
+import { getRouteColor } from "../../data/common/route-color"
+import { RouteSegment } from "../../types/route-segment"
+import { convertToGeoJSON } from "../../deck-gl/helpers"
 
-const ToggleButton = styled(Button)({
+const DrawerContainer = styled(Paper)<{ isDocked?: boolean }>(({ isDocked }) => ({
   position: "fixed",
-  top: "5rem",
-  right: "1.5rem",
-  zIndex: 1900,
-  backgroundColor: "#1a73e8",
-  color: "#fff",
-  borderRadius: "24px",
-  padding: "8px 16px",
-  boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-  display: "flex",
-  alignItems: "center",
-  gap: "8px",
-  textTransform: "none",
-  fontWeight: 600,
-  "&:hover": {
-    backgroundColor: "#1557b0",
-  },
-})
-
-const DrawerContainer = styled(Paper)({
-  position: "fixed",
-  top: 0,
-  right: 0,
+  top: isDocked ? "64px" : 0,
+  left: isDocked ? 0 : "auto",
+  right: isDocked ? "auto" : 0,
   bottom: 0,
-  width: "390px",
-  zIndex: 2000,
+  width: isDocked ? "420px" : "390px",
+  zIndex: isDocked ? 100 : 2000,
   display: "flex",
   flexDirection: "column",
   backgroundColor: "#ffffff",
-  boxShadow: "-4px 0 20px rgba(0, 0, 0, 0.15)",
+  boxShadow: isDocked
+    ? "4px 0 20px rgba(0, 0, 0, 0.08)"
+    : "-4px 0 20px rgba(0, 0, 0, 0.15)",
+  borderRight: isDocked ? "1px solid #e8eaed" : "none",
   overflow: "hidden",
-})
+  "@media (max-width: 768px)": {
+    width: "100%",
+  },
+}))
 
 const Header = styled(Box)({
   display: "flex",
@@ -103,6 +95,7 @@ interface ChatMessage {
   tools?: string[]
   status?: string
   isStreaming?: boolean
+  renderedRoutes?: RouteSegment[]
 }
 
 const QUICK_PROMPTS = [
@@ -111,13 +104,27 @@ const QUICK_PROMPTS = [
   "Show the operational status of routes in Boston",
 ]
 
-export const AgentSidePanel: React.FC = () => {
+interface AgentSidePanelProps {
+  isDocked?: boolean
+}
+
+export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
+  isDocked = false,
+}) => {
   const [isOpen, setIsOpen] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputText, setInputText] = useState("")
+  const [sessionId, setSessionId] = useState<string | null>(null)
   const [showThoughts, setShowThoughts] = useState<Record<string, boolean>>({})
+  const [showRoutes, setShowRoutes] = useState<Record<string, boolean>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const selectedCity = useAppStore((state) => state.selectedCity)
+  const setActiveTab = useAppStore((state) => state.setActiveTab)
+  const setAgentRenderedRoutes = useAppStore(
+    (state) => state.setAgentRenderedRoutes,
+  )
+  const setSelectedRouteId = useAppStore((state) => state.setSelectedRouteId)
+  const map = useAppStore((state) => state.refs.map)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -127,8 +134,29 @@ export const AgentSidePanel: React.FC = () => {
     scrollToBottom()
   }, [messages])
 
+  useEffect(() => {
+    return () => {
+      setAgentRenderedRoutes(null)
+    }
+  }, [setAgentRenderedRoutes])
+
   const toggleThoughts = (id: string) => {
     setShowThoughts((prev) => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  const toggleRoutes = (id: string) => {
+    setShowRoutes((prev) => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  const handleRouteClick = (route: RouteSegment) => {
+    setSelectedRouteId(route.id)
+    useAppStore.getState().setSelectedRouteSegment(route)
+    const currentMap = map || useAppStore.getState().refs.map
+    if (currentMap && route.path && route.path.length > 0) {
+      const bounds = new google.maps.LatLngBounds()
+      route.path.forEach((pt) => bounds.extend(pt))
+      currentMap.fitBounds(bounds, 100)
+    }
   }
 
   const handleSend = (queryText: string) => {
@@ -157,13 +185,19 @@ export const AgentSidePanel: React.FC = () => {
     setInputText("")
 
     const cityId = selectedCity?.id || "boston"
-    const url = `/api/agent/stream?message=${encodeURIComponent(queryText)}&city=${encodeURIComponent(cityId)}`
+    const sessionParam = sessionId
+      ? `&session_id=${encodeURIComponent(sessionId)}`
+      : ""
+    const url = `/api/agent/stream?message=${encodeURIComponent(queryText)}&city=${encodeURIComponent(cityId)}${sessionParam}`
 
     const eventSource = new EventSource(url)
 
     eventSource.addEventListener("status", (event) => {
       try {
         const data = JSON.parse(event.data)
+        if (data.session_id) {
+          setSessionId(data.session_id)
+        }
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === agentMsgId
@@ -178,15 +212,20 @@ export const AgentSidePanel: React.FC = () => {
       try {
         const data = JSON.parse(event.data)
         setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === agentMsgId
-              ? {
-                  ...msg,
-                  thoughts: [...(msg.thoughts || []), data.text],
-                  status: "Thinking...",
-                }
-              : msg
-          )
+          prev.map((msg) => {
+            if (msg.id === agentMsgId) {
+              const currentThoughts = msg.thoughts || []
+              const newThoughts = currentThoughts.includes(data.text)
+                ? currentThoughts
+                : [...currentThoughts, data.text]
+              return {
+                ...msg,
+                thoughts: newThoughts,
+                status: "Thinking...",
+              }
+            }
+            return msg
+          })
         )
       } catch (e) {}
     })
@@ -196,15 +235,20 @@ export const AgentSidePanel: React.FC = () => {
         const data = JSON.parse(event.data)
         const toolDesc = `${data.name}(${JSON.stringify(data.args || {})})`
         setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === agentMsgId
-              ? {
-                  ...msg,
-                  tools: [...(msg.tools || []), toolDesc],
-                  status: `Querying BigQuery: ${data.name}...`,
-                }
-              : msg
-          )
+          prev.map((msg) => {
+            if (msg.id === agentMsgId) {
+              const currentTools = msg.tools || []
+              const newTools = currentTools.includes(toolDesc)
+                ? currentTools
+                : [...currentTools, toolDesc]
+              return {
+                ...msg,
+                tools: newTools,
+                status: `Querying BigQuery: ${data.name}...`,
+              }
+            }
+            return msg
+          })
         )
       } catch (e) {}
     })
@@ -224,6 +268,88 @@ export const AgentSidePanel: React.FC = () => {
           )
         )
       } catch (e) {}
+    })
+
+    eventSource.addEventListener("render_agent_routes", (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        const rawFeatures = data.features || []
+        const routeSegments: RouteSegment[] = rawFeatures.map((f: any) => {
+          const props = f.properties || {}
+          const coords = f.geometry?.coordinates || []
+          const path = coords.map((c: number[]) => ({
+            lng: c[0],
+            lat: c[1],
+          }))
+          const dur = props.duration || 0
+          const staticDur = props.static_duration || 0
+          const delayTime =
+            props.delay_time ??
+            props.delay_seconds ??
+            props.peak_delay_seconds ??
+            (dur && staticDur ? dur - staticDur : 0)
+          let delayRatio = props.delay_ratio
+          if (
+            delayRatio === undefined ||
+            delayRatio === null ||
+            (delayRatio === 1 && delayTime > 0)
+          ) {
+            if (dur && staticDur && staticDur > 0) {
+              delayRatio = dur / staticDur
+            } else if (delayTime > 1200) {
+              delayRatio = 2.5
+            } else if (delayTime > 600) {
+              delayRatio = 1.8
+            } else if (delayTime > 180) {
+              delayRatio = 1.4
+            } else if (delayTime > 0) {
+              delayRatio = 1.25
+            } else {
+              delayRatio = 1.0
+            }
+          }
+          const color = getRouteColor(delayRatio, delayTime)
+          return {
+            id: props.id || props.selected_route_id,
+            name: props.name || props.display_name || props.id,
+            path,
+            duration: dur,
+            staticDuration: staticDur,
+            delayRatio,
+            delayTime,
+            color,
+            length: props.length || 0,
+          }
+        })
+
+        setAgentRenderedRoutes(routeSegments)
+        useAppStore.getState().setMapData(convertToGeoJSON(routeSegments))
+
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === agentMsgId
+              ? { ...msg, renderedRoutes: routeSegments }
+              : msg
+          )
+        )
+
+        const currentMap = map || useAppStore.getState().refs.map
+        if (currentMap && routeSegments.length > 0) {
+          const bounds = new google.maps.LatLngBounds()
+          let hasPoints = false
+          routeSegments.forEach((seg) => {
+            seg.path.forEach((pt) => {
+              bounds.extend(pt)
+              hasPoints = true
+            })
+          })
+          if (hasPoints && !bounds.isEmpty()) {
+            currentMap.fitBounds(bounds, 50)
+          }
+        }
+      } catch (err) {
+        console.error("Error processing agent rendered routes:", err)
+      }
     })
 
     eventSource.addEventListener("done", () => {
@@ -256,17 +382,12 @@ export const AgentSidePanel: React.FC = () => {
     })
   }
 
-  if (!isOpen) {
-    return (
-      <ToggleButton onClick={() => setIsOpen(true)}>
-        <SmartToyIcon fontSize="small" />
-        RMI Assistant
-      </ToggleButton>
-    )
+  const handleClose = () => {
+    setActiveTab("dashboard")
   }
 
   return (
-    <DrawerContainer elevation={8}>
+    <DrawerContainer elevation={isDocked ? 2 : 8} isDocked={isDocked}>
       <Header>
         <Box sx={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <AutoAwesomeIcon sx={{ color: "#1a73e8" }} />
@@ -279,7 +400,7 @@ export const AgentSidePanel: React.FC = () => {
             </Typography>
           </Box>
         </Box>
-        <IconButton size="small" onClick={() => setIsOpen(false)}>
+        <IconButton size="small" onClick={handleClose}>
           <CloseIcon fontSize="small" />
         </IconButton>
       </Header>
@@ -426,9 +547,135 @@ export const AgentSidePanel: React.FC = () => {
                   </Box>
                 )}
 
-                <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
-                  {msg.text}
-                </Typography>
+                <Box sx={{ 
+                  "& p": { m: 0, mb: 1, '&:last-child': { mb: 0 } },
+                  "& strong": { fontWeight: 600 },
+                  lineHeight: 1.5,
+                  fontSize: "0.875rem"
+                }}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {msg.text}
+                  </ReactMarkdown>
+                </Box>
+
+                {msg.renderedRoutes && msg.renderedRoutes.length > 0 && (
+                  <Box sx={{ mt: 1.5, pt: 1, borderTop: "1px solid #e8eaed" }}>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        cursor: "pointer",
+                      }}
+                      onClick={() => toggleRoutes(msg.id)}
+                    >
+                      <Chip
+                        size="small"
+                        icon={<AutoAwesomeIcon sx={{ fontSize: "14px !important" }} />}
+                        label={`${msg.renderedRoutes.length} routes highlighted on map`}
+                        color="primary"
+                        variant="outlined"
+                        sx={{ fontSize: "0.75rem", fontWeight: 500, cursor: "pointer" }}
+                      />
+                      <IconButton size="small" sx={{ p: 0.5 }}>
+                        {showRoutes[msg.id] ? (
+                          <ExpandLessIcon fontSize="small" />
+                        ) : (
+                          <ExpandMoreIcon fontSize="small" />
+                        )}
+                      </IconButton>
+                    </Box>
+
+                    <Collapse in={!!showRoutes[msg.id]}>
+                      <Box
+                        sx={{
+                          mt: 1,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 0.75,
+                          maxHeight: "220px",
+                          overflowY: "auto",
+                          p: 0.5,
+                        }}
+                      >
+                        {msg.renderedRoutes.map((r, i) => {
+                          const delaySec = r.delayTime || r.delay || 0
+                          const durSec = r.duration || 0
+                          const staticSec = r.staticDuration || 0
+                          return (
+                            <Box
+                              key={r.id || i}
+                              onClick={() => handleRouteClick(r)}
+                              sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                p: 1,
+                                borderRadius: "8px",
+                                backgroundColor: "#ffffff",
+                                border: "1px solid #e8eaed",
+                                cursor: "pointer",
+                                transition: "all 0.15s ease",
+                                "&:hover": {
+                                  backgroundColor: "#f8f9fa",
+                                  borderColor: "#1a73e8",
+                                  transform: "translateY(-1px)",
+                                },
+                              }}
+                            >
+                              <Box sx={{ display: "flex", alignItems: "center", gap: 1, overflow: "hidden", minWidth: 0 }}>
+                                <Box
+                                  sx={{
+                                    width: 10,
+                                    height: 10,
+                                    borderRadius: "50%",
+                                    backgroundColor: r.color || "#13d68f",
+                                    flexShrink: 0,
+                                  }}
+                                />
+                                <Box sx={{ overflow: "hidden" }}>
+                                  <Typography
+                                    variant="caption"
+                                    sx={{
+                                      fontWeight: 600,
+                                      color: "#202124",
+                                      display: "block",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                    title={r.name}
+                                  >
+                                    {r.name || r.id}
+                                  </Typography>
+                                  {durSec > 0 && (
+                                    <Typography variant="caption" sx={{ color: "#5f6368", fontSize: "0.65rem" }}>
+                                      {Math.round(durSec)}s {staticSec > 0 ? `(Free flow: ${Math.round(staticSec)}s)` : ""}
+                                    </Typography>
+                                  )}
+                                </Box>
+                              </Box>
+                              {delaySec > 0 && (
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    color: r.color || "#d93025",
+                                    fontWeight: 700,
+                                    fontSize: "0.7rem",
+                                    flexShrink: 0,
+                                    ml: 1,
+                                  }}
+                                >
+                                  +{Math.round(delaySec)}s delay
+                                </Typography>
+                              )}
+                            </Box>
+                          )
+                        })}
+                      </Box>
+                    </Collapse>
+                  </Box>
+                )}
               </Box>
             </Box>
           ))

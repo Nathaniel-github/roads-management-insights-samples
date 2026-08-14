@@ -89,12 +89,16 @@ const DemoContent: React.FC = () => {
   const usecase = useAppStore((state) => state.usecase)
   const selectedCity = useAppStore((state) => state.selectedCity)
   const timeFilters = useAppStore((state) => state.timeFilters)
+  const activeTab = useAppStore((state) => state.activeTab)
+  const isAgentTab = activeTab === "agent"
+  const setAlerts = useAppStore((state) => state.setAlerts)
+  const setAgentRenderedRoutes = useAppStore((state) => state.setAgentRenderedRoutes)
   const { resetMapData, resetSelectedRoute } = useMapContext()
   const [isResetting, setIsResetting] = useState(false)
 
-  useRealtimeData(selectedCity?.id ?? "", !!selectedCity)
-  useHistoricalData(selectedCity, timeFilters)
-  useRawHistoricalData(selectedCity, timeFilters)
+  useRealtimeData(selectedCity?.id ?? "", !!selectedCity && !isAgentTab)
+  useHistoricalData(selectedCity, timeFilters, !isAgentTab)
+  useRawHistoricalData(selectedCity, timeFilters, !isAgentTab)
   // Calculate and set zoom level if city doesn't have one
   useAutoZoom(selectedCity)
 
@@ -105,19 +109,31 @@ const DemoContent: React.FC = () => {
     // Reset map data and selected route
     resetMapData()
     resetSelectedRoute()
-    setIsResetting(false)
+    
+    // Globally clean multi-tab map artifacts on context switch
+    setAlerts(null)
+    setAgentRenderedRoutes(null)
 
-    // return () => clearTimeout(timer)
-  }, [usecase, selectedCity.id, resetMapData, resetSelectedRoute])
+    setIsResetting(false)
+  }, [usecase, selectedCity.id, activeTab, resetMapData, resetSelectedRoute, setAlerts, setAgentRenderedRoutes])
 
   return (
     <DemoContainer>
-      <MapContainer>
+      <MapContainer
+        sx={{
+          ...(isAgentTab
+            ? {
+                left: { xs: 0, md: "420px" },
+                width: { xs: "100%", md: "calc(100% - 420px)" },
+              }
+            : {}),
+        }}
+      >
         {/* Persistent map container */}
         <UnifiedMap />
 
         {/* Usecase-specific components as overlays for additional UI/logic */}
-        {!isResetting && (
+        {!isAgentTab && !isResetting && (
           <UsecaseOverlay>
             {(usecase === "realtime-monitoring" ||
               usecase === "data-analytics") && <RealtimeMonitoringPage />}
@@ -125,22 +141,28 @@ const DemoContent: React.FC = () => {
           </UsecaseOverlay>
         )}
       </MapContainer>
-      <FloatingPanel />
-      <RightFloatingPanel />
-      <AgentSidePanel />
-      <MapViewController />
-      <QuickCompareButton />
-      <ComparisonModeControls />
-      <Box
-        sx={{
-          display: "block",
-          "@media (max-width: 1240px)": {
-            display: "none", // Hide on mobile since it's now in settings panel
-          },
-        }}
-      >
-        <TimeReplayControls isVisible={true} />
-      </Box>
+
+      {isAgentTab ? (
+        <AgentSidePanel isDocked={true} />
+      ) : (
+        <>
+          <FloatingPanel />
+          <RightFloatingPanel />
+          <MapViewController />
+          <QuickCompareButton />
+          <ComparisonModeControls />
+          <Box
+            sx={{
+              display: "block",
+              "@media (max-width: 1240px)": {
+                display: "none", // Hide on mobile since it's now in settings panel
+              },
+            }}
+          >
+            <TimeReplayControls isVisible={true} />
+          </Box>
+        </>
+      )}
     </DemoContainer>
   )
 }

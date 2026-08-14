@@ -78,21 +78,34 @@ const DeckTooltip: React.FC<TooltipProps> = ({
   const { data: historicalData } = useAppStore(
     (state) => state.queries.filteredHistoricalData,
   )
+  const isAgentTab = useAppStore((state) => state.activeTab === "agent")
+  const agentRenderedRoutes = useAppStore((state) => state.agentRenderedRoutes)
 
-  if (!hoveredObject) {
+  if (!hoveredObject && !selectedRouteSegment) {
     return null
   }
+
   // Find the correct segment based on mode and use case
   let correctSegment: TooltipDataSource | null = null
 
-  if (
+  if (isAgentTab) {
+    // On agent tab, prioritize selectedRouteSegment or matching agentRenderedRoutes or hoveredObject properties
+    const agentSegment =
+      agentRenderedRoutes?.find(
+        (s) => s.id === selectedRouteSegment?.id || (s as any).routeId === selectedRouteSegment?.id
+      ) || null
+    correctSegment =
+      (selectedRouteSegment as TooltipDataSource) ||
+      agentSegment ||
+      (hoveredObject?.properties as TooltipDataSource) ||
+      null
+  } else if (
     currentUsecase === "realtime-monitoring" ||
     currentUsecase === "data-analytics"
   ) {
     // For realtime monitoring, use the appropriate data source based on mode
     if (mode === "live") {
       // In live mode, use realtime roadSegments directly
-      // realtimeRoadSegmentsData is already processed, not raw GeoJSON
       const liveSegment = realtimeRoadSegmentsData?.find(
         (segment: RouteSegment) =>
           (segment as RouteSegment & { routeId?: string }).routeId ===
@@ -100,12 +113,10 @@ const DeckTooltip: React.FC<TooltipProps> = ({
       )
       correctSegment = liveSegment || null
     } else {
-      // In historical mode, prioritize hoveredObject properties since it contains processed data
-      // from getHistoricalSegments which includes grey routes for segments without historical data
+      // In historical mode, prioritize hoveredObject properties
       if (hoveredObject?.properties) {
         correctSegment = hoveredObject.properties
       } else {
-        // Fallback to historical data stats for selected route
         const routeDelays = historicalData?.stats?.routeDelays
         if (routeDelays) {
           const historicalSegment = routeDelays.find(
@@ -121,13 +132,24 @@ const DeckTooltip: React.FC<TooltipProps> = ({
 
   // Use correct segment data if available, otherwise fall back to selectedRouteSegment or hoveredObject properties
   const rawDataSource: TooltipDataSource =
-    correctSegment || selectedRouteSegment || hoveredObject?.properties || {}
+    correctSegment || (selectedRouteSegment as TooltipDataSource) || hoveredObject?.properties || ({} as any)
 
   // Normalize the data structure to handle different field names between realtime and historical
-  const dataSource: TooltipDataSource = {
+  const dataSource: TooltipDataSource & { [key: string]: any } = {
     ...rawDataSource,
-    // Historical data uses 'averageDuration', realtime uses 'duration'
-    duration: rawDataSource.duration || rawDataSource.averageDuration,
+    duration:
+      rawDataSource.duration ||
+      rawDataSource.averageDuration ||
+      (rawDataSource as any).duration_in_seconds,
+    staticDuration:
+      rawDataSource.staticDuration ||
+      (rawDataSource as any).static_duration ||
+      (rawDataSource as any).static_duration_in_seconds,
+    delayTime:
+      rawDataSource.delayTime ||
+      rawDataSource.delay ||
+      (rawDataSource as any).delay_time ||
+      (rawDataSource as any).peak_delay_seconds,
   }
 
   const {
@@ -138,18 +160,35 @@ const DeckTooltip: React.FC<TooltipProps> = ({
     color = "#9E9E9E",
   } = dataSource
 
+  const routeName =
+    dataSource.name ||
+    dataSource.display_name ||
+    dataSource.id ||
+    dataSource.routeId ||
+    ""
+
   // Check if route has no historical data based on color
-  const hasNoHistoricalData = color === "#9E9E9E" || color === "#9e9e9e"
+  const hasNoHistoricalData =
+    !isAgentTab && (color === "#9E9E9E" || color === "#9e9e9e")
 
   // Use delayTime directly to match the panel behavior
-  const actualDelay = delayTime || delay || 0
+  const actualDelay =
+    delayTime ||
+    delay ||
+    (duration && dataSource.staticDuration && duration > dataSource.staticDuration
+      ? duration - dataSource.staticDuration
+      : 0)
 
   // Ensure delay is a valid number
   const validDelay = actualDelay && !isNaN(actualDelay) ? actualDelay : 0
 
   // Calculate values for display
   const averageDelayPercentage =
-    delayRatio && !isNaN(delayRatio) ? (delayRatio - 1) * 100 : 0
+    delayRatio && !isNaN(delayRatio) && delayRatio > 1
+      ? (delayRatio - 1) * 100
+      : (dataSource.staticDuration && dataSource.staticDuration > 0 && validDelay > 0
+          ? (validDelay / dataSource.staticDuration) * 100
+          : 0)
   const averageDuration = duration && !isNaN(duration) ? duration : 0
   const staticDuration =
     dataSource.staticDuration && !isNaN(dataSource.staticDuration)
@@ -157,7 +196,7 @@ const DeckTooltip: React.FC<TooltipProps> = ({
       : 0
 
   const delayToShow = shouldShowDelay(validDelay)
-    ? `${averageDelayPercentage.toFixed(1)}% (+${formatSecondsToShow(validDelay)}s)`
+    ? `${averageDelayPercentage > 0 ? averageDelayPercentage.toFixed(1) + "% " : ""}(+${formatSecondsToShow(validDelay)}s)`
     : "No delay"
 
   let tooltipTitle: string
@@ -165,7 +204,12 @@ const DeckTooltip: React.FC<TooltipProps> = ({
   let travelTimeText: string
   let delayText: string
 
-  if (mode === "historical") {
+  if (isAgentTab) {
+    tooltipTitle = "AI Route Analysis"
+    tooltipSubtitle = "Queried from BigQuery Traffic Data"
+    travelTimeText = "Traffic Travel Time"
+    delayText = "Peak Traffic Delay"
+  } else if (mode === "historical") {
     tooltipTitle = "Historical Analysis"
     tooltipSubtitle = hasNoHistoricalData
       ? "This route segment does not have historical traffic data for analysis."
@@ -199,7 +243,7 @@ const DeckTooltip: React.FC<TooltipProps> = ({
         boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
         padding: "12px",
         minWidth: "220px",
-        maxWidth: "280px",
+        maxWidth: "300px",
         zIndex: 1000,
         fontFamily: '"Google Sans", Roboto, Arial, sans-serif',
         border: "1px solid rgba(0,0,0,0.12)",
@@ -213,21 +257,40 @@ const DeckTooltip: React.FC<TooltipProps> = ({
           justifyContent: "space-between",
           alignItems: "flex-start",
           marginBottom: "8px",
+          gap: "8px",
         }}
       >
-        <h3
-          style={{
-            margin: 0,
-            fontSize: "13px",
-            fontWeight: 500,
-            color: "#1a73e8",
-            fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
-            letterSpacing: "0.1px",
-            lineHeight: "16px",
-          }}
-        >
-          {tooltipTitle}
-        </h3>
+        <div style={{ overflow: "hidden" }}>
+          <h3
+            style={{
+              margin: 0,
+              fontSize: "13px",
+              fontWeight: 600,
+              color: "#1a73e8",
+              fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
+              letterSpacing: "0.1px",
+              lineHeight: "16px",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+            title={routeName}
+          >
+            {routeName || tooltipTitle}
+          </h3>
+          {routeName && (
+            <div
+              style={{
+                fontSize: "10px",
+                color: "#5f6368",
+                fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
+                marginTop: "2px",
+              }}
+            >
+              {tooltipTitle}
+            </div>
+          )}
+        </div>
         <button
           onClick={(e) => {
             handleClose(e)
@@ -341,6 +404,7 @@ const DeckTooltip: React.FC<TooltipProps> = ({
             )}
           </>
         )}
+      
       </div>
 
       {/* Footer */}

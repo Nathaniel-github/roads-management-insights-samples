@@ -12,9 +12,10 @@ pytype_strict_library(
     ],
     data = [
         "resources/rmi_schemas.md",
-    ],
+    ] + glob(["skills/**"]),
     deps = [
         "//maps/api/snapping/roads/rmi_agent:common_flags",
+        "//maps/api/snapping/roads/rmi_agent/agents/tools:resolve_location_lib",
         "//third_party/py/absl/logging",
         "//third_party/py/google/adk",
         "//third_party/py/google/auth:__init__",

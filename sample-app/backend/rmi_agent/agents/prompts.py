@@ -31,6 +31,9 @@ All queries are to be run against the Google Roads Management Insights dataset.
 The cloud project in use is `{PROJECT_ID}`.
 The default RMI dataset is `{RMI_DATASET}`.
 Unless specified otherwise, qualify tables with `{PROJECT_ID}.{RMI_DATASET}`.
+The current RMI dataset covers the Boston, MA metropolitan area. If a spatial
+query targets a location outside this area, the query may return zero rows.
+Inform the user their location may be outside current data coverage.
 
 """
     + _RMI_SCHEMAS

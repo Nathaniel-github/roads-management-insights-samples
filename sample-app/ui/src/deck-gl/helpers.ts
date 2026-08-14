@@ -20,26 +20,40 @@ export const convertToGeoJSON = (inputData: any) => {
     return inputData
   }
 
+  // If inputData is an array of already-formed GeoJSON Features
+  if (
+    Array.isArray(inputData) &&
+    inputData.length > 0 &&
+    inputData[0]?.type === "Feature"
+  ) {
+    return {
+      type: "FeatureCollection",
+      features: inputData,
+    }
+  }
+
   // If data is an array of segments, convert to GeoJSON
   if (Array.isArray(inputData)) {
     return {
       type: "FeatureCollection",
       features: inputData
         .map((segment) => {
-          // Add safety checks for segment properties
           if (!segment || typeof segment !== "object") {
-            console.warn("Invalid segment found:", segment)
             return null
+          }
+
+          if (segment.type === "Feature" && segment.geometry) {
+            return segment
           }
 
           return {
             type: "Feature",
             properties: {
               id: segment.id || "unknown",
-              name: segment.routeId || segment.id || "unknown",
-              color: segment.color || "#000000",
+              name: segment.name || segment.routeId || segment.id || "unknown",
+              color: segment.color || "#13d68f",
               delay: segment.delayTime || 0,
-              delayRatio: segment.delayRatio || 0,
+              delayRatio: segment.delayRatio || 1,
               duration: segment.duration || 0,
               staticDuration: segment.staticDuration || 0,
               averageSpeed: segment.averageSpeed || 0,
@@ -48,14 +62,15 @@ export const convertToGeoJSON = (inputData: any) => {
             geometry: {
               type: "LineString",
               coordinates:
-                segment.path?.map((point: any) => [point.lng, point.lat]) || [],
+                segment.path?.map((point: any) =>
+                  Array.isArray(point) ? point : [point.lng, point.lat]
+                ) || [],
             },
           }
         })
-        .filter(Boolean), // Remove any null entries
+        .filter(Boolean),
     }
   }
-  // Return empty GeoJSON if data format is unknown
   return { type: "FeatureCollection", features: [] }
 }
 

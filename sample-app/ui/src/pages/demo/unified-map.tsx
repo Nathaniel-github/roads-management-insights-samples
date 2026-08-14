@@ -31,7 +31,19 @@ const UnifiedMap: React.FC = () => {
   const selectedRouteSegment = useAppStore(
     (state) => state.selectedRouteSegment,
   )
+  const activeTab = useAppStore((state) => state.activeTab)
+  const agentRenderedRoutes = useAppStore((state) => state.agentRenderedRoutes)
   const mapData = useAppStore((state) => state.mapData)
+  const isAgentTab = activeTab === "agent"
+
+  const activeMapData = useMemo(() => {
+    if (isAgentTab) {
+      return agentRenderedRoutes && agentRenderedRoutes.length > 0
+        ? agentRenderedRoutes
+        : []
+    }
+    return mapData || []
+  }, [isAgentTab, agentRenderedRoutes, mapData])
 
   type Landmark = { position: [number, number]; name: string }
 
@@ -68,7 +80,7 @@ const UnifiedMap: React.FC = () => {
   return (
     <Box sx={{ width: "100%", height: "100%" }}>
       <DeckGLRenderer
-        data={mapData || []}
+        data={activeMapData}
         selectedCity={selectedCity}
         mode={mode}
         usecase={usecase}

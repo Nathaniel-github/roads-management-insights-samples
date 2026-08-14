@@ -3,20 +3,25 @@
 from __future__ import annotations
 
 import datetime
+import importlib.resources
+import pathlib
 from typing import Any
 
 from absl import logging
+from google.adk import skills
 from google.adk.agents import llm_agent
-from google.adk.tools.bigquery import bigquery_credentials
-from google.adk.tools.bigquery import bigquery_toolset
-from google.adk.tools.bigquery import config as bq_config
+from google.adk.integrations.bigquery import bigquery_credentials
+from google.adk.integrations.bigquery import bigquery_toolset
+from google.adk.integrations.bigquery import config as bq_config
 from google.adk.planners import built_in_planner
 from google.adk.tools import base_tool
+from google.adk.tools import skill_toolset
 import google.auth
 from google.genai import types
 
-from .. import common_flags
-from . import prompts
+from backend.rmi_agent import common_flags
+from backend.rmi_agent.agents import prompts
+from backend.rmi_agent.agents.tools import resolve_location
 
 tool_config = bq_config.BigQueryToolConfig(
     write_mode=bq_config.WriteMode.BLOCKED, max_query_result_rows=1_000_000
@@ -42,6 +47,33 @@ except Exception:  # pylint: disable=broad-exception-caught
 bq_toolset = bigquery_toolset.BigQueryToolset(
     credentials_config=credentials_config, bigquery_tool_config=tool_config
 )
+
+
+def _inject_geo_filter(
+    tool: base_tool.BaseTool,
+    args: dict[str, Any],
+    tool_context: Any,  # ToolContext
+) -> dict[str, Any] | None:
+  """Substitutes {{GEO_FILTER}} in execute_sql queries.
+
+  When the agent writes SQL containing the {{GEO_FILTER}} placeholder,
+  this callback replaces it with the full spatial filter stashed by
+  resolve_location before BigQuery executes the query.
+
+  Args:
+    tool: The tool about to be executed.
+    args: Mutable tool input arguments dictionary.
+    tool_context: The ADK tool context for state access.
+
+  Returns:
+    None to proceed with (possibly modified) args.
+  """
+  if tool.name == "execute_sql" and isinstance(args, dict):
+    query = args.get("query") or ""
+    geo_filter = tool_context.state.get("_geo_sql_filter")
+    if geo_filter and "{{GEO_FILTER}}" in query:
+      args["query"] = query.replace("{{GEO_FILTER}}", geo_filter)
+  return None
 
 
 def _strip_sql_results(
@@ -118,6 +150,23 @@ def present_final_table(
 
 bq_tools = [bq_toolset, present_final_table]
 
+# ── Skills ───────────────────────────────────────────────────────
+_PACKAGE_FILES = importlib.resources.files(
+    "backend.rmi_agent.agents"
+)
+_GEO_SKILL_DIR = pathlib.Path(
+    str(_PACKAGE_FILES.joinpath("skills", "rmi-geospatial-resolver"))
+)
+_METRICS_SKILL_DIR = pathlib.Path(
+    str(_PACKAGE_FILES.joinpath("skills", "rmi-traffic-metrics-grounding"))
+)
+_geo_skill = skills.load_skill_from_dir(_GEO_SKILL_DIR)
+_metrics_skill = skills.load_skill_from_dir(_METRICS_SKILL_DIR)
+rmi_skill_toolset = skill_toolset.SkillToolset(
+    skills=[_geo_skill, _metrics_skill],
+    additional_tools=[resolve_location.resolve_location],
+)
+
 
 SMOKETEST_INSTRUCTION = (
     "\nWhen asked what agent you are, respond exactly: 'I am the RMI Agent.'"
@@ -152,7 +201,7 @@ def get_rmi_agent_instruction(unused_ctx: object | None = None) -> str:
 
 
 ROOT_AGENT = llm_agent.Agent(
-    model="gemini-2.5-flash",
+    model="gemini-3.5-flash",
     name="RMI_agent",
     description=(
         "Agent to answer questions about RMI data residing in BigQuery."
@@ -160,10 +209,12 @@ ROOT_AGENT = llm_agent.Agent(
     planner=built_in_planner.BuiltInPlanner(
         thinking_config=types.ThinkingConfig(
             include_thoughts=True,
+            thinking_level="medium",
         )
     ),
     instruction=get_rmi_agent_instruction,
-    tools=bq_tools,
+    tools=bq_tools + [rmi_skill_toolset],
+    before_tool_callback=_inject_geo_filter,
     after_tool_callback=_strip_sql_results,
 )
 

@@ -19,6 +19,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Any
 import os
 import gzip
 import re
@@ -296,8 +297,179 @@ async def get_city_metadata():
     return city_metadata
 
 
+def _parse_geometry_to_coordinates(geom_val):
+    if not geom_val:
+        return None
+    try:
+        import json
+        if isinstance(geom_val, str):
+            geom_val = json.loads(geom_val)
+        if isinstance(geom_val, dict) and "coordinates" in geom_val:
+            return geom_val["coordinates"]
+    except Exception:
+        pass
+    return None
+
+def _fetch_fallback_geometries(
+    city_name: str, route_ids: list[str]
+) -> dict[str, Any]:
+    try:
+        from backend.fetch_data import get_city_config
+        from google.cloud import bigquery
+
+        config = get_city_config(city_name)
+        client = bigquery.Client(project=config["bq_project"])
+        historical_table = config["bq_historical_table"]
+        dataset = config["bq_historical_dataset"]
+        project = config["bq_project"]
+        query = f"""
+        SELECT selected_route_id, ANY_VALUE(display_name) as display_name, ANY_VALUE(ST_ASGEOJSON(route_geometry)) as route_geometry
+        FROM `{project}.{dataset}.{historical_table}`
+        WHERE selected_route_id IN UNNEST(@route_ids)
+        GROUP BY selected_route_id
+        """
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ArrayQueryParameter("route_ids", "STRING", route_ids)
+            ]
+        )
+        query_job = client.query(query, job_config=job_config)
+        results = query_job.result()
+        geom_map = {}
+        for r in results:
+            geom_map[r.selected_route_id] = {
+                "display_name": r.display_name,
+                "route_geometry": r.route_geometry,
+            }
+        return geom_map
+    except Exception as e:
+        print(f"Error fetching fallback geometries: {e}")
+        return {}
+
+def _extract_features_from_rows(
+    table_rows: list[dict[str, Any]], city: str
+) -> list[dict[str, Any]]:
+    if not table_rows or not isinstance(table_rows, list):
+        return []
+
+    seen_ids = set()
+    unique_route_rows = []
+    for r in table_rows:
+        if isinstance(r, dict) and "selected_route_id" in r:
+            rid = r.get("selected_route_id")
+            if rid and rid not in seen_ids:
+                seen_ids.add(rid)
+                unique_route_rows.append(r)
+
+    if not unique_route_rows:
+        return []
+
+    all_ids = list(seen_ids)
+    fallback_map = _fetch_fallback_geometries(city, all_ids)
+
+    features = []
+    for r in unique_route_rows:
+        rid = r.get("selected_route_id")
+        
+        db_info = fallback_map.get(rid, {})
+        coords = _parse_geometry_to_coordinates(db_info.get("route_geometry"))
+        
+        if not coords:
+            coords = _parse_geometry_to_coordinates(r.get("route_geometry"))
+
+        disp_name = db_info.get("display_name") or r.get("display_name") or rid
+
+        if coords:
+            dur = 0
+            for k in (
+                "duration_in_seconds",
+                "avg_duration_in_seconds",
+                "duration",
+                "max_duration",
+            ):
+                if r.get(k) is not None:
+                    try:
+                        dur = float(r[k])
+                        break
+                    except (ValueError, TypeError):
+                        pass
+
+            static_dur = 0
+            for k in (
+                "static_duration_in_seconds",
+                "avg_static_duration_in_seconds",
+                "static_duration",
+            ):
+                if r.get(k) is not None:
+                    try:
+                        static_dur = float(r[k])
+                        break
+                    except (ValueError, TypeError):
+                        pass
+
+            d_time = 0.0
+            for k in (
+                "peak_delay_seconds",
+                "peak_delay_in_seconds",
+                "traffic_delay_seconds",
+                "traffic_delay_in_seconds",
+                "delay_seconds",
+                "delay_in_seconds",
+                "delay_time",
+                "delay",
+            ):
+                if r.get(k) is not None:
+                    try:
+                        d_time = float(r[k])
+                        break
+                    except (ValueError, TypeError):
+                        pass
+
+            if d_time == 0.0 and dur and static_dur:
+                d_time = dur - static_dur
+
+            d_ratio = None
+            if static_dur and static_dur > 0 and dur > 0:
+                d_ratio = dur / static_dur
+            
+            if d_ratio is None:
+                if d_time > 1200:
+                    d_ratio = 2.5
+                elif d_time > 600:
+                    d_ratio = 1.8
+                elif d_time > 180:
+                    d_ratio = 1.4
+                elif d_time > 0:
+                    d_ratio = 1.25
+                else:
+                    d_ratio = 1.0
+
+            features.append({
+                "type": "Feature",
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": coords,
+                },
+                "properties": {
+                    **r,
+                    "id": rid,
+                    "selected_route_id": rid,
+                    "name": disp_name,
+                    "duration": dur,
+                    "static_duration": static_dur,
+                    "delay_ratio": d_ratio,
+                    "delay_time": d_time,
+                    "duration": dur,
+                    "static_duration": static_dur,
+                    "delay_ratio": d_ratio,
+                    "delay_time": d_time,
+                },
+            })
+    return features
+
+
 @app.get("/api/agent/stream")
-async def stream_agent(message: str, city: str = "boston"):
+async def stream_agent(message: str, city: str = "boston", session_id: str = None):
     """Server-Sent Events endpoint for RMI Agent streaming responses."""
     async def event_generator():
         try:
@@ -306,11 +478,12 @@ async def stream_agent(message: str, city: str = "boston"):
             except Exception:
                 pass
 
-            session_id = f"session-{uuid.uuid4().hex}"
+            curr_session_id = session_id or f"session-{uuid.uuid4().hex}"
             runner = runners.InMemoryRunner(agent=ROOT_AGENT)
-            await runner.session_service.create_session(
-                app_name=runner.app_name, session_id=session_id, user_id="user"
-            )
+            if not session_id:
+                await runner.session_service.create_session(
+                    app_name=runner.app_name, session_id=curr_session_id, user_id="user"
+                )
 
             run_config = runners.RunConfig(
                 streaming_mode=StreamingMode.SSE
@@ -321,16 +494,25 @@ async def stream_agent(message: str, city: str = "boston"):
                 "data": json.dumps({"status": f"Querying BigQuery ({city})..."})
             }
 
+            routes_rendered = False
+            has_streamed_text = False
+
             async for event in runner.run_async(
                 user_id="user",
-                session_id=session_id,
+                session_id=curr_session_id,
                 new_message=types.Content(
                     role="user",
-                    parts=[types.Part.from_text(text=message)],
+                    parts=[types.Part.from_text(text=message + (
+                        "\n\n[System instruction: If this request requires finding specific routes that can be visualized on a map, "
+                        "your final SQL query MUST explicitly select 'selected_route_id', 'duration', and 'static_duration' so the UI "
+                        "can construct the visualizations. Do NOT query or fetch route_geometry (the frontend handles topology automatically). "
+                        "If this is purely a high-level analytical query, ignore this rule.]"
+                    ))],
                 ),
                 run_config=run_config,
             ):
                 if event.content and event.content.parts:
+                    is_partial = getattr(event, "is_partial", False)
                     for part in event.content.parts:
                         if getattr(part, "thought", False) and part.text:
                             yield {
@@ -338,18 +520,81 @@ async def stream_agent(message: str, city: str = "boston"):
                                 "data": json.dumps({"text": part.text})
                             }
                         elif getattr(part, "function_call", None):
+                            tool_name = part.function_call.name
+                            tool_args = dict(part.function_call.args) if part.function_call.args else {}
                             yield {
                                 "event": "tool_call",
                                 "data": json.dumps({
-                                    "name": part.function_call.name,
-                                    "args": dict(part.function_call.args) if part.function_call.args else {}
+                                    "name": tool_name,
+                                    "args": tool_args
                                 })
                             }
+                            if tool_name == "present_final_table":
+                                try:
+                                    sess = await runner.session_service.get_session(
+                                        app_name=runner.app_name,
+                                        session_id=curr_session_id,
+                                        user_id="user",
+                                    )
+                                    state = sess.state if sess else {}
+                                    table_rows = (
+                                        state.get("candidate_table")
+                                        or state.get("_last_sql_result")
+                                        or []
+                                    )
+                                    features = _extract_features_from_rows(
+                                        table_rows, city
+                                    )
+                                    if features:
+                                        desc = tool_args.get("description", "")
+                                        routes_rendered = True
+                                        yield {
+                                            "event": "render_agent_routes",
+                                            "data": json.dumps({
+                                                "features": features,
+                                                "description": desc,
+                                            }),
+                                        }
+                                except Exception as extract_err:
+                                    print(f"Error processing agent routes for map: {extract_err}")
                         elif part.text and not getattr(part, "thought", False):
-                            yield {
-                                "event": "text_chunk",
-                                "data": json.dumps({"text": part.text})
-                            }
+                            if is_partial:
+                                has_streamed_text = True
+                                yield {
+                                    "event": "text_chunk",
+                                    "data": json.dumps({"text": part.text})
+                                }
+                            elif not has_streamed_text:
+                                yield {
+                                    "event": "text_chunk",
+                                    "data": json.dumps({"text": part.text})
+                                }
+            
+            if not routes_rendered:
+                try:
+                    sess = await runner.session_service.get_session(
+                        app_name=runner.app_name,
+                        session_id=curr_session_id,
+                        user_id="user",
+                    )
+                    state = sess.state if sess else {}
+                    table_rows = (
+                        state.get("candidate_table")
+                        or state.get("_last_sql_result")
+                        or []
+                    )
+                    features = _extract_features_from_rows(table_rows, city)
+                    if features:
+                        yield {
+                            "event": "render_agent_routes",
+                            "data": json.dumps({
+                                "features": features,
+                                "description": "Query results",
+                            }),
+                        }
+                except Exception as e:
+                    pass
+
             yield {
                 "event": "done",
                 "data": json.dumps({"status": "SUCCESS"})
