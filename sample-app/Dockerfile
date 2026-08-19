@@ -4,7 +4,7 @@ WORKDIR /app/ui
 COPY ui/ ./
 
 # Stage 2: Build the Python backend
-FROM python:3.12-slim
+FROM python:3.12
 WORKDIR /app
 
 # Install poetry
