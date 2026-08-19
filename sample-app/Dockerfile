@@ -13,6 +13,8 @@ RUN pip install poetry
 # Copy poetry files
 COPY pyproject.toml poetry.lock ./
 
+ENV PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring
+
 # Install dependencies
 RUN poetry install --no-root --only main
 
