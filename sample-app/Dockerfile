@@ -7,6 +7,9 @@ COPY ui/ ./
 FROM python:3.12
 WORKDIR /app
 
+# Install missing geospatial C-deps
+RUN apt-get update && apt-get install -y gdal-bin libgdal-dev g++
+
 # Copy requirements
 COPY requirements.txt ./
 
