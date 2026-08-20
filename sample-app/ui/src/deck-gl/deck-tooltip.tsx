@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 import CloseIcon from "@mui/icons-material/Close"
 import React from "react"
 
@@ -79,7 +78,6 @@ const DeckTooltip: React.FC<TooltipProps> = ({
     (state) => state.queries.filteredHistoricalData,
   )
   const isAgentTab = useAppStore((state) => state.activeTab === "agent")
-  const agentRenderedRoutes = useAppStore((state) => state.agentRenderedRoutes)
 
   if (!hoveredObject && !selectedRouteSegment) {
     return null
@@ -89,14 +87,9 @@ const DeckTooltip: React.FC<TooltipProps> = ({
   let correctSegment: TooltipDataSource | null = null
 
   if (isAgentTab) {
-    // On agent tab, prioritize selectedRouteSegment or matching agentRenderedRoutes or hoveredObject properties
-    const agentSegment =
-      agentRenderedRoutes?.find(
-        (s) => s.id === selectedRouteSegment?.id || (s as any).routeId === selectedRouteSegment?.id
-      ) || null
+    // On agent tab, prioritize selectedRouteSegment, then hovered feature props
     correctSegment =
       (selectedRouteSegment as TooltipDataSource) ||
-      agentSegment ||
       (hoveredObject?.properties as TooltipDataSource) ||
       null
   } else if (
@@ -132,7 +125,10 @@ const DeckTooltip: React.FC<TooltipProps> = ({
 
   // Use correct segment data if available, otherwise fall back to selectedRouteSegment or hoveredObject properties
   const rawDataSource: TooltipDataSource =
-    correctSegment || (selectedRouteSegment as TooltipDataSource) || hoveredObject?.properties || ({} as any)
+    correctSegment ||
+    (selectedRouteSegment as TooltipDataSource) ||
+    hoveredObject?.properties ||
+    ({} as any)
 
   // Normalize the data structure to handle different field names between realtime and historical
   const dataSource: TooltipDataSource & { [key: string]: any } = {
@@ -172,23 +168,31 @@ const DeckTooltip: React.FC<TooltipProps> = ({
     !isAgentTab && (color === "#9E9E9E" || color === "#9e9e9e")
 
   // Use delayTime directly to match the panel behavior
-  const actualDelay =
-    delayTime ||
-    delay ||
-    (duration && dataSource.staticDuration && duration > dataSource.staticDuration
-      ? duration - dataSource.staticDuration
-      : 0)
+  const actualDelay = isAgentTab
+    ? delayTime ||
+      delay ||
+      (duration &&
+      dataSource.staticDuration &&
+      duration > dataSource.staticDuration
+        ? duration - dataSource.staticDuration
+        : 0)
+    : delayTime || delay || 0
 
   // Ensure delay is a valid number
   const validDelay = actualDelay && !isNaN(actualDelay) ? actualDelay : 0
 
   // Calculate values for display
-  const averageDelayPercentage =
-    delayRatio && !isNaN(delayRatio) && delayRatio > 1
+  const averageDelayPercentage = isAgentTab
+    ? delayRatio && !isNaN(delayRatio) && delayRatio > 1
       ? (delayRatio - 1) * 100
-      : (dataSource.staticDuration && dataSource.staticDuration > 0 && validDelay > 0
-          ? (validDelay / dataSource.staticDuration) * 100
-          : 0)
+      : dataSource.staticDuration &&
+          dataSource.staticDuration > 0 &&
+          validDelay > 0
+        ? (validDelay / dataSource.staticDuration) * 100
+        : 0
+    : delayRatio && !isNaN(delayRatio)
+      ? (delayRatio - 1) * 100
+      : 0
   const averageDuration = duration && !isNaN(duration) ? duration : 0
   const staticDuration =
     dataSource.staticDuration && !isNaN(dataSource.staticDuration)
@@ -196,7 +200,9 @@ const DeckTooltip: React.FC<TooltipProps> = ({
       : 0
 
   const delayToShow = shouldShowDelay(validDelay)
-    ? `${averageDelayPercentage > 0 ? averageDelayPercentage.toFixed(1) + "% " : ""}(+${formatSecondsToShow(validDelay)}s)`
+    ? isAgentTab
+      ? `${averageDelayPercentage > 0 ? averageDelayPercentage.toFixed(1) + "% " : ""}(+${formatSecondsToShow(validDelay)}s)`
+      : `${averageDelayPercentage.toFixed(1)}% (+${formatSecondsToShow(validDelay)}s)`
     : "No delay"
 
   let tooltipTitle: string
@@ -274,11 +280,11 @@ const DeckTooltip: React.FC<TooltipProps> = ({
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
             }}
-            title={routeName}
+            title={isAgentTab ? routeName : tooltipTitle}
           >
-            {routeName || tooltipTitle}
+            {isAgentTab ? routeName || tooltipTitle : tooltipTitle}
           </h3>
-          {routeName && (
+          {isAgentTab && routeName && (
             <div
               style={{
                 fontSize: "10px",
@@ -404,7 +410,6 @@ const DeckTooltip: React.FC<TooltipProps> = ({
             )}
           </>
         )}
-      
       </div>
 
       {/* Footer */}

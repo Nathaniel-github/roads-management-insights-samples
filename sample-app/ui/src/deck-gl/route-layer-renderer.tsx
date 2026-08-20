@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 import { LayersList } from "@deck.gl/core"
 import { useMap } from "@vis.gl/react-google-maps"
 import type { Feature, FeatureCollection, Geometry } from "geojson"
@@ -116,6 +115,7 @@ export const RouteLayerRenderer: React.FC<RouteLayerRendererProps> = ({
   const setSelectedRouteSegment = useAppStore(
     (state) => state.setSelectedRouteSegment,
   )
+  const isAgentTab = useAppStore((state) => state.activeTab === "agent")
 
   // Get alerts from store and convert to AlertPoint format
   const storeAlerts = useAppStore((state) => state.alerts)
@@ -441,17 +441,21 @@ export const RouteLayerRenderer: React.FC<RouteLayerRendererProps> = ({
         }
       }
 
-      // Find the segment object from object properties or data array
-      const clickedSegment =
-        (object?.properties ? { ...object.properties, id: actualRouteId } : null) ||
-        (Array.isArray(data)
-          ? (data as RouteSegment[]).find((s) => s.id === actualRouteId)
-          : null) ||
-        null
+      // On the agent tab, record the clicked segment so the tooltip can read it.
+      if (isAgentTab) {
+        const clickedSegment =
+          (object?.properties
+            ? { ...object.properties, id: actualRouteId }
+            : null) ||
+          (Array.isArray(data)
+            ? (data as RouteSegment[]).find((s) => s.id === actualRouteId)
+            : null) ||
+          null
 
-      if (clickedSegment) {
-        setSelectedRouteSegment(clickedSegment as any)
-        setDirectSegmentObject(clickedSegment as any)
+        if (clickedSegment) {
+          setSelectedRouteSegment(clickedSegment as any)
+          setDirectSegmentObject(clickedSegment as any)
+        }
       }
 
       // First, cancel any ongoing animation
@@ -495,6 +499,7 @@ export const RouteLayerRenderer: React.FC<RouteLayerRendererProps> = ({
       cancelAnimation,
       geoJsonData,
       data,
+      isAgentTab,
     ],
   )
 

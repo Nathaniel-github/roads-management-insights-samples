@@ -92,7 +92,7 @@ const DemoContent: React.FC = () => {
   const activeTab = useAppStore((state) => state.activeTab)
   const isAgentTab = activeTab === "agent"
   const setAlerts = useAppStore((state) => state.setAlerts)
-  const setAgentRenderedRoutes = useAppStore((state) => state.setAgentRenderedRoutes)
+  const setMapData = useAppStore((state) => state.setMapData)
   const { resetMapData, resetSelectedRoute } = useMapContext()
   const [isResetting, setIsResetting] = useState(false)
 
@@ -112,10 +112,14 @@ const DemoContent: React.FC = () => {
     
     // Globally clean multi-tab map artifacts on context switch
     setAlerts(null)
-    setAgentRenderedRoutes(null)
 
     setIsResetting(false)
-  }, [usecase, selectedCity.id, activeTab, resetMapData, resetSelectedRoute, setAlerts, setAgentRenderedRoutes])
+  }, [usecase, selectedCity.id, activeTab, resetMapData, resetSelectedRoute, setAlerts])
+
+  // Clear rendered routes when switching between the dashboard and agent tabs
+  useEffect(() => {
+    setMapData(null)
+  }, [activeTab, setMapData])
 
   return (
     <DemoContainer>
@@ -143,7 +147,7 @@ const DemoContent: React.FC = () => {
       </MapContainer>
 
       {isAgentTab ? (
-        <AgentSidePanel isDocked={true} />
+        <AgentSidePanel />
       ) : (
         <>
           <FloatingPanel />

@@ -11,54 +11,49 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-import React, { useState, useEffect, useRef } from "react"
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome"
+import CloseIcon from "@mui/icons-material/Close"
+import ExpandLessIcon from "@mui/icons-material/ExpandLess"
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore"
+import SendIcon from "@mui/icons-material/Send"
 import {
   Box,
-  Paper,
-  Typography,
-  IconButton,
-  TextField,
   Button,
   Chip,
   CircularProgress,
   Collapse,
-  Divider,
+  IconButton,
+  Paper,
+  TextField,
+  Typography,
 } from "@mui/material"
 import { styled } from "@mui/material/styles"
-import SmartToyIcon from "@mui/icons-material/SmartToy"
-import CloseIcon from "@mui/icons-material/Close"
+import React, { useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import SendIcon from "@mui/icons-material/Send"
-import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome"
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore"
-import ExpandLessIcon from "@mui/icons-material/ExpandLess"
-import { useAppStore } from "../../store"
-import { getRouteColor } from "../../data/common/route-color"
-import { RouteSegment } from "../../types/route-segment"
-import { convertToGeoJSON } from "../../deck-gl/helpers"
 
-const DrawerContainer = styled(Paper)<{ isDocked?: boolean }>(({ isDocked }) => ({
+import { getRouteColor } from "../../data/common/route-color"
+import { convertToGeoJSON } from "../../deck-gl/helpers"
+import { useAppStore } from "../../store"
+import { RouteSegment } from "../../types/route-segment"
+
+const DrawerContainer = styled(Paper)({
   position: "fixed",
-  top: isDocked ? "64px" : 0,
-  left: isDocked ? 0 : "auto",
-  right: isDocked ? "auto" : 0,
+  top: "64px",
+  left: 0,
   bottom: 0,
-  width: isDocked ? "420px" : "390px",
-  zIndex: isDocked ? 100 : 2000,
+  width: "420px",
+  zIndex: 100,
   display: "flex",
   flexDirection: "column",
   backgroundColor: "#ffffff",
-  boxShadow: isDocked
-    ? "4px 0 20px rgba(0, 0, 0, 0.08)"
-    : "-4px 0 20px rgba(0, 0, 0, 0.15)",
-  borderRight: isDocked ? "1px solid #e8eaed" : "none",
+  boxShadow: "4px 0 20px rgba(0, 0, 0, 0.08)",
+  borderRight: "1px solid #e8eaed",
   overflow: "hidden",
   "@media (max-width: 768px)": {
     width: "100%",
   },
-}))
+})
 
 const Header = styled(Box)({
   display: "flex",
@@ -104,25 +99,16 @@ const QUICK_PROMPTS = [
   "Show the operational status of routes in Boston",
 ]
 
-interface AgentSidePanelProps {
-  isDocked?: boolean
-}
-
-export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
-  isDocked = false,
-}) => {
-  const [isOpen, setIsOpen] = useState(false)
+export const AgentSidePanel: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputText, setInputText] = useState("")
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [showThoughts, setShowThoughts] = useState<Record<string, boolean>>({})
   const [showRoutes, setShowRoutes] = useState<Record<string, boolean>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const eventSourceRef = useRef<EventSource | null>(null)
   const selectedCity = useAppStore((state) => state.selectedCity)
   const setActiveTab = useAppStore((state) => state.setActiveTab)
-  const setAgentRenderedRoutes = useAppStore(
-    (state) => state.setAgentRenderedRoutes,
-  )
   const setSelectedRouteId = useAppStore((state) => state.setSelectedRouteId)
   const map = useAppStore((state) => state.refs.map)
 
@@ -136,9 +122,9 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
 
   useEffect(() => {
     return () => {
-      setAgentRenderedRoutes(null)
+      eventSourceRef.current?.close()
     }
-  }, [setAgentRenderedRoutes])
+  }, [])
 
   const toggleThoughts = (id: string) => {
     setShowThoughts((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -190,7 +176,15 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
       : ""
     const url = `/api/agent/stream?message=${encodeURIComponent(queryText)}&city=${encodeURIComponent(cityId)}${sessionParam}`
 
+    eventSourceRef.current?.close()
     const eventSource = new EventSource(url)
+    eventSourceRef.current = eventSource
+
+    const updateAgentMsg = (patch: Partial<ChatMessage>) => {
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === agentMsgId ? { ...msg, ...patch } : msg)),
+      )
+    }
 
     eventSource.addEventListener("status", (event) => {
       try {
@@ -198,14 +192,10 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
         if (data.session_id) {
           setSessionId(data.session_id)
         }
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === agentMsgId
-              ? { ...msg, status: data.status }
-              : msg
-          )
-        )
-      } catch (e) {}
+        updateAgentMsg({ status: data.status })
+      } catch (e) {
+        console.error("Failed to parse agent status event", e)
+      }
     })
 
     eventSource.addEventListener("thinking", (event) => {
@@ -213,21 +203,20 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
         const data = JSON.parse(event.data)
         setMessages((prev) =>
           prev.map((msg) => {
-            if (msg.id === agentMsgId) {
-              const currentThoughts = msg.thoughts || []
-              const newThoughts = currentThoughts.includes(data.text)
-                ? currentThoughts
-                : [...currentThoughts, data.text]
-              return {
-                ...msg,
-                thoughts: newThoughts,
-                status: "Thinking...",
-              }
+            if (msg.id !== agentMsgId) return msg
+            const thoughts = msg.thoughts || []
+            return {
+              ...msg,
+              thoughts: thoughts.includes(data.text)
+                ? thoughts
+                : [...thoughts, data.text],
+              status: "Thinking...",
             }
-            return msg
-          })
+          }),
         )
-      } catch (e) {}
+      } catch (e) {
+        console.error("Failed to parse agent thinking event", e)
+      }
     })
 
     eventSource.addEventListener("tool_call", (event) => {
@@ -236,21 +225,18 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
         const toolDesc = `${data.name}(${JSON.stringify(data.args || {})})`
         setMessages((prev) =>
           prev.map((msg) => {
-            if (msg.id === agentMsgId) {
-              const currentTools = msg.tools || []
-              const newTools = currentTools.includes(toolDesc)
-                ? currentTools
-                : [...currentTools, toolDesc]
-              return {
-                ...msg,
-                tools: newTools,
-                status: `Querying BigQuery: ${data.name}...`,
-              }
+            if (msg.id !== agentMsgId) return msg
+            const tools = msg.tools || []
+            return {
+              ...msg,
+              tools: tools.includes(toolDesc) ? tools : [...tools, toolDesc],
+              status: `Querying BigQuery: ${data.name}...`,
             }
-            return msg
-          })
+          }),
         )
-      } catch (e) {}
+      } catch (e) {
+        console.error("Failed to parse agent tool_call event", e)
+      }
     })
 
     eventSource.addEventListener("text_chunk", (event) => {
@@ -264,74 +250,47 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
                   text: msg.text + data.text,
                   status: "Generating answer...",
                 }
-              : msg
-          )
+              : msg,
+          ),
         )
-      } catch (e) {}
+      } catch (e) {
+        console.error("Failed to parse agent text_chunk event", e)
+      }
     })
 
     eventSource.addEventListener("render_agent_routes", (event) => {
       try {
         const data = JSON.parse(event.data)
         const rawFeatures = data.features || []
+        // The server (_extract_features_from_rows) already normalizes and
+        // computes delay_ratio/delay_time, so trust those fields directly and
+        // reuse the shared getRouteColor helper for coloring.
         const routeSegments: RouteSegment[] = rawFeatures.map((f: any) => {
           const props = f.properties || {}
-          const coords = f.geometry?.coordinates || []
-          const path = coords.map((c: number[]) => ({
+          const path = (f.geometry?.coordinates || []).map((c: number[]) => ({
             lng: c[0],
             lat: c[1],
           }))
-          const dur = props.duration || 0
-          const staticDur = props.static_duration || 0
-          const delayTime =
-            props.delay_time ??
-            props.delay_seconds ??
-            props.peak_delay_seconds ??
-            (dur && staticDur ? dur - staticDur : 0)
-          let delayRatio = props.delay_ratio
-          if (
-            delayRatio === undefined ||
-            delayRatio === null ||
-            (delayRatio === 1 && delayTime > 0)
-          ) {
-            if (dur && staticDur && staticDur > 0) {
-              delayRatio = dur / staticDur
-            } else if (delayTime > 1200) {
-              delayRatio = 2.5
-            } else if (delayTime > 600) {
-              delayRatio = 1.8
-            } else if (delayTime > 180) {
-              delayRatio = 1.4
-            } else if (delayTime > 0) {
-              delayRatio = 1.25
-            } else {
-              delayRatio = 1.0
-            }
-          }
-          const color = getRouteColor(delayRatio, delayTime)
+          const duration = props.duration || 0
+          const staticDuration = props.static_duration || 0
+          const delayTime = props.delay_time ?? 0
+          const delayRatio = props.delay_ratio ?? 1
           return {
             id: props.id || props.selected_route_id,
             name: props.name || props.display_name || props.id,
             path,
-            duration: dur,
-            staticDuration: staticDur,
+            duration,
+            staticDuration,
             delayRatio,
             delayTime,
-            color,
+            color: getRouteColor(delayRatio, delayTime),
             length: props.length || 0,
           }
         })
 
-        setAgentRenderedRoutes(routeSegments)
         useAppStore.getState().setMapData(convertToGeoJSON(routeSegments))
 
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === agentMsgId
-              ? { ...msg, renderedRoutes: routeSegments }
-              : msg
-          )
-        )
+        updateAgentMsg({ renderedRoutes: routeSegments })
 
         const currentMap = map || useAppStore.getState().refs.map
         if (currentMap && routeSegments.length > 0) {
@@ -353,13 +312,7 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
     })
 
     eventSource.addEventListener("done", () => {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === agentMsgId
-            ? { ...msg, isStreaming: false, status: undefined }
-            : msg
-        )
-      )
+      updateAgentMsg({ isStreaming: false, status: undefined })
       eventSource.close()
     })
 
@@ -375,8 +328,8 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
                   msg.text ||
                   "Sorry, an error occurred while querying the RMI agent.",
               }
-            : msg
-        )
+            : msg,
+        ),
       )
       eventSource.close()
     })
@@ -387,12 +340,15 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
   }
 
   return (
-    <DrawerContainer elevation={isDocked ? 2 : 8} isDocked={isDocked}>
+    <DrawerContainer elevation={2}>
       <Header>
         <Box sx={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <AutoAwesomeIcon sx={{ color: "#1a73e8" }} />
           <Box>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+            <Typography
+              variant="subtitle1"
+              sx={{ fontWeight: 700, lineHeight: 1.2 }}
+            >
               Roads AI Assistant
             </Typography>
             <Typography variant="caption" color="text.secondary">
@@ -417,9 +373,14 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
             }}
           >
             <Typography variant="body2" color="text.secondary" align="center">
-              Ask any question about historical travel times, route slowdowns, or congestion in Boston.
+              Ask any question about historical travel times, route slowdowns,
+              or congestion in Boston.
             </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, mt: 1 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ fontWeight: 600, mt: 1 }}
+            >
               Suggested queries:
             </Typography>
             {QUICK_PROMPTS.map((prompt, idx) => (
@@ -503,7 +464,9 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
                         fontSize: "0.75rem",
                       }}
                     >
-                      {showThoughts[msg.id] ? "Hide thoughts" : `Show thoughts (${msg.thoughts.length})`}
+                      {showThoughts[msg.id]
+                        ? "Hide thoughts"
+                        : `Show thoughts (${msg.thoughts.length})`}
                     </Button>
                     <Collapse in={!!showThoughts[msg.id]}>
                       <Box
@@ -547,12 +510,14 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
                   </Box>
                 )}
 
-                <Box sx={{ 
-                  "& p": { m: 0, mb: 1, '&:last-child': { mb: 0 } },
-                  "& strong": { fontWeight: 600 },
-                  lineHeight: 1.5,
-                  fontSize: "0.875rem"
-                }}>
+                <Box
+                  sx={{
+                    "& p": { m: 0, mb: 1, "&:last-child": { mb: 0 } },
+                    "& strong": { fontWeight: 600 },
+                    lineHeight: 1.5,
+                    fontSize: "0.875rem",
+                  }}
+                >
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {msg.text}
                   </ReactMarkdown>
@@ -571,11 +536,19 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
                     >
                       <Chip
                         size="small"
-                        icon={<AutoAwesomeIcon sx={{ fontSize: "14px !important" }} />}
+                        icon={
+                          <AutoAwesomeIcon
+                            sx={{ fontSize: "14px !important" }}
+                          />
+                        }
                         label={`${msg.renderedRoutes.length} routes highlighted on map`}
                         color="primary"
                         variant="outlined"
-                        sx={{ fontSize: "0.75rem", fontWeight: 500, cursor: "pointer" }}
+                        sx={{
+                          fontSize: "0.75rem",
+                          fontWeight: 500,
+                          cursor: "pointer",
+                        }}
                       />
                       <IconButton size="small" sx={{ p: 0.5 }}>
                         {showRoutes[msg.id] ? (
@@ -623,7 +596,15 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
                                 },
                               }}
                             >
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 1, overflow: "hidden", minWidth: 0 }}>
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 1,
+                                  overflow: "hidden",
+                                  minWidth: 0,
+                                }}
+                              >
                                 <Box
                                   sx={{
                                     width: 10,
@@ -649,8 +630,17 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
                                     {r.name || r.id}
                                   </Typography>
                                   {durSec > 0 && (
-                                    <Typography variant="caption" sx={{ color: "#5f6368", fontSize: "0.65rem" }}>
-                                      {Math.round(durSec)}s {staticSec > 0 ? `(Free flow: ${Math.round(staticSec)}s)` : ""}
+                                    <Typography
+                                      variant="caption"
+                                      sx={{
+                                        color: "#5f6368",
+                                        fontSize: "0.65rem",
+                                      }}
+                                    >
+                                      {Math.round(durSec)}s{" "}
+                                      {staticSec > 0
+                                        ? `(Free flow: ${Math.round(staticSec)}s)`
+                                        : ""}
                                     </Typography>
                                   )}
                                 </Box>
@@ -691,7 +681,7 @@ export const AgentSidePanel: React.FC<AgentSidePanelProps> = ({
             placeholder="Ask about Boston traffic..."
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            onKeyPress={(e) => {
+            onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault()
                 handleSend(inputText)

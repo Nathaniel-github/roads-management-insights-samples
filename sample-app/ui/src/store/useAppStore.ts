@@ -164,7 +164,6 @@ export interface AppState {
   isComparisonApplied: boolean
   alerts: RouteAlert[] | RouteAlertWithPosition[] | null
   mapData: MapData | null
-  agentRenderedRoutes: RouteSegment[] | null
   shouldUseGreyRoutes: boolean
 
   routeMetrics: {
@@ -278,7 +277,6 @@ interface AppActions {
     layout: "main" | "comparison",
     data: AverageTravelTimeData,
   ) => void
-  setAgentRenderedRoutes: (routes: RouteSegment[] | null) => void
 }
 
 const FALLBACK_CITY: City = {
@@ -449,7 +447,6 @@ export const useAppStore = create(
       previousPanelStates: null,
       mapMarker: null,
       mapData: null,
-      agentRenderedRoutes: null,
       shouldUseGreyRoutes: false,
 
       routeMetrics: {
@@ -1837,8 +1834,6 @@ export const useAppStore = create(
           }),
 
         setMapData: (data: MapData) => set({ mapData: data }),
-        setAgentRenderedRoutes: (routes: RouteSegment[] | null) =>
-          set({ agentRenderedRoutes: routes }),
         setShouldUseGreyRoutes: (shouldUse: boolean) =>
           set({ shouldUseGreyRoutes: shouldUse }),
         setTimeReplayState: (state: Partial<AppState["timeReplayState"]>) => {

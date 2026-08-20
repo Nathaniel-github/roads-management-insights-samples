@@ -51,9 +51,9 @@ export const convertToGeoJSON = (inputData: any) => {
             properties: {
               id: segment.id || "unknown",
               name: segment.name || segment.routeId || segment.id || "unknown",
-              color: segment.color || "#13d68f",
+              color: segment.color || "#000000",
               delay: segment.delayTime || 0,
-              delayRatio: segment.delayRatio || 1,
+              delayRatio: segment.delayRatio || 0,
               duration: segment.duration || 0,
               staticDuration: segment.staticDuration || 0,
               averageSpeed: segment.averageSpeed || 0,
