@@ -1,21 +1,9 @@
-# Python & Poetry
-**/__pycache__/
-**/*.pyc
-**/*.pyo
-**/*.pyd
-.venv/
+**/__pycache__
+.env
+.venv
+**/.DS_Store
+
+# Python tooling caches (agent backend)
 .poetry_cache/
 .poetry_config/
-*.egg-info/
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# Environment & Logs
-.env
-.env.*
-!.env.example
-*.log
-
-# OS & Editor
-**/.DS_Store

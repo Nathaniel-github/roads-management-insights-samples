@@ -332,17 +332,12 @@ export function groupFeaturesByColor(
 
   geoJsonData.features.forEach((feature) => {
     const typedFeature = feature as Feature<Geometry, RouteProperties>
-    const color = typedFeature.properties?.color?.toLowerCase()
+    const color = typedFeature.properties?.color
 
-    if (color === COLOR_CATEGORIES.GREEN.toLowerCase()) {
-      groups[COLOR_CATEGORIES.GREEN].push(typedFeature)
-    } else if (color === COLOR_CATEGORIES.YELLOW.toLowerCase()) {
-      groups[COLOR_CATEGORIES.YELLOW].push(typedFeature)
-    } else if (color === COLOR_CATEGORIES.RED.toLowerCase()) {
-      groups[COLOR_CATEGORIES.RED].push(typedFeature)
-    } else if (color === COLOR_CATEGORIES.DARK_RED.toLowerCase()) {
-      groups[COLOR_CATEGORIES.DARK_RED].push(typedFeature)
+    if (color && groups[color]) {
+      groups[color].push(typedFeature)
     } else {
+      // Fallback to no-data grey for unknown colors
       groups[COLOR_CATEGORIES.NO_DATA].push(typedFeature)
     }
   })
@@ -368,10 +363,11 @@ export function createColorSpecificLayer(
   onHover?: (info: { object?: Feature<Geometry, RouteProperties> }) => void,
   shouldUseGreyRoutes: boolean = false,
 ) {
+  // Adding new date to fix the issue with route segments giving weird route streaks
   return new GeoJsonLayer<RouteProperties>({
-    id: `route-segments-${mode}-${colorCategory.replace("#", "")}`,
+    id: `route-segments-${mode}-${colorCategory.replace("#", "")}+ ${new Date()}`,
     data: geoJsonData,
-    stroked: true,
+    stroked: false,
     filled: false,
     lineWidthMinPixels: 0.5,
     lineWidthScale: 1,

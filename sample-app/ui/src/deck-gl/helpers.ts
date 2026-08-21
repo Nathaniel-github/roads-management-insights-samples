@@ -38,7 +38,9 @@ export const convertToGeoJSON = (inputData: any) => {
       type: "FeatureCollection",
       features: inputData
         .map((segment) => {
+          // Add safety checks for segment properties
           if (!segment || typeof segment !== "object") {
+            console.warn("Invalid segment found:", segment)
             return null
           }
 
@@ -68,9 +70,10 @@ export const convertToGeoJSON = (inputData: any) => {
             },
           }
         })
-        .filter(Boolean),
+        .filter(Boolean), // Remove any null entries
     }
   }
+  // Return empty GeoJSON if data format is unknown
   return { type: "FeatureCollection", features: [] }
 }
 

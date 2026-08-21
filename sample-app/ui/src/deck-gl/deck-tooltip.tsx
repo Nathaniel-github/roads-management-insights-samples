@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 import CloseIcon from "@mui/icons-material/Close"
 import React from "react"
 
@@ -79,7 +80,7 @@ const DeckTooltip: React.FC<TooltipProps> = ({
   )
   const isAgentTab = useAppStore((state) => state.activeTab === "agent")
 
-  if (!hoveredObject && !selectedRouteSegment) {
+  if (!hoveredObject && !(isAgentTab && selectedRouteSegment)) {
     return null
   }
 
@@ -99,6 +100,7 @@ const DeckTooltip: React.FC<TooltipProps> = ({
     // For realtime monitoring, use the appropriate data source based on mode
     if (mode === "live") {
       // In live mode, use realtime roadSegments directly
+      // realtimeRoadSegmentsData is already processed, not raw GeoJSON
       const liveSegment = realtimeRoadSegmentsData?.find(
         (segment: RouteSegment) =>
           (segment as RouteSegment & { routeId?: string }).routeId ===
@@ -106,10 +108,12 @@ const DeckTooltip: React.FC<TooltipProps> = ({
       )
       correctSegment = liveSegment || null
     } else {
-      // In historical mode, prioritize hoveredObject properties
+      // In historical mode, prioritize hoveredObject properties since it contains processed data
+      // from getHistoricalSegments which includes grey routes for segments without historical data
       if (hoveredObject?.properties) {
         correctSegment = hoveredObject.properties
       } else {
+        // Fallback to historical data stats for selected route
         const routeDelays = historicalData?.stats?.routeDelays
         if (routeDelays) {
           const historicalSegment = routeDelays.find(
@@ -249,7 +253,7 @@ const DeckTooltip: React.FC<TooltipProps> = ({
         boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
         padding: "12px",
         minWidth: "220px",
-        maxWidth: "300px",
+        maxWidth: isAgentTab ? "300px" : "280px",
         zIndex: 1000,
         fontFamily: '"Google Sans", Roboto, Arial, sans-serif',
         border: "1px solid rgba(0,0,0,0.12)",
@@ -263,40 +267,56 @@ const DeckTooltip: React.FC<TooltipProps> = ({
           justifyContent: "space-between",
           alignItems: "flex-start",
           marginBottom: "8px",
-          gap: "8px",
+          gap: isAgentTab ? "8px" : undefined,
         }}
       >
-        <div style={{ overflow: "hidden" }}>
+        {isAgentTab ? (
+          <div style={{ overflow: "hidden" }}>
+            <h3
+              style={{
+                margin: 0,
+                fontSize: "13px",
+                fontWeight: 600,
+                color: "#1a73e8",
+                fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
+                letterSpacing: "0.1px",
+                lineHeight: "16px",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+              title={routeName}
+            >
+              {routeName || tooltipTitle}
+            </h3>
+            {routeName && (
+              <div
+                style={{
+                  fontSize: "10px",
+                  color: "#5f6368",
+                  fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
+                  marginTop: "2px",
+                }}
+              >
+                {tooltipTitle}
+              </div>
+            )}
+          </div>
+        ) : (
           <h3
             style={{
               margin: 0,
               fontSize: "13px",
-              fontWeight: 600,
+              fontWeight: 500,
               color: "#1a73e8",
               fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
               letterSpacing: "0.1px",
               lineHeight: "16px",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
             }}
-            title={isAgentTab ? routeName : tooltipTitle}
           >
-            {isAgentTab ? routeName || tooltipTitle : tooltipTitle}
+            {tooltipTitle}
           </h3>
-          {isAgentTab && routeName && (
-            <div
-              style={{
-                fontSize: "10px",
-                color: "#5f6368",
-                fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
-                marginTop: "2px",
-              }}
-            >
-              {tooltipTitle}
-            </div>
-          )}
-        </div>
+        )}
         <button
           onClick={(e) => {
             handleClose(e)

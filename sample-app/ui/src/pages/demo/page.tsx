@@ -109,7 +109,7 @@ const DemoContent: React.FC = () => {
     // Reset map data and selected route
     resetMapData()
     resetSelectedRoute()
-    
+
     // Globally clean multi-tab map artifacts on context switch
     setAlerts(null)
 
