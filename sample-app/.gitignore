@@ -7,3 +7,5 @@
 .poetry_cache/
 .poetry_config/
 .pytest_cache/
+vendor/
+requirements.txt

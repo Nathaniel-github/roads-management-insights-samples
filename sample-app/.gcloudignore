@@ -1,1 +1,9 @@
-/ui/node_modules
+.gcloudignore
+.git
+.gitignore
+.venv/
+.poetry_cache/
+.poetry_config/
+.pytest_cache/
+__pycache__/
+ui/node_modules/
