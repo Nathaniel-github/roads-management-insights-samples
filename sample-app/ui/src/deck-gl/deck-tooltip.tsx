@@ -38,6 +38,13 @@ interface TooltipDataSource {
   type?: string
   congestionLevel?: string
   historicalRouteId?: string
+  // Raw field aliases as returned by the agent's BigQuery results.
+  duration_in_seconds?: number
+  static_duration?: number
+  static_duration_in_seconds?: number
+  delay_time?: number
+  peak_delay_seconds?: number
+  display_name?: string
 }
 
 interface TooltipProps {
@@ -132,24 +139,24 @@ const DeckTooltip: React.FC<TooltipProps> = ({
     correctSegment ||
     (selectedRouteSegment as TooltipDataSource) ||
     hoveredObject?.properties ||
-    ({} as any)
+    {}
 
   // Normalize the data structure to handle different field names between realtime and historical
-  const dataSource: TooltipDataSource & { [key: string]: any } = {
+  const dataSource: TooltipDataSource = {
     ...rawDataSource,
     duration:
       rawDataSource.duration ||
       rawDataSource.averageDuration ||
-      (rawDataSource as any).duration_in_seconds,
+      rawDataSource.duration_in_seconds,
     staticDuration:
       rawDataSource.staticDuration ||
-      (rawDataSource as any).static_duration ||
-      (rawDataSource as any).static_duration_in_seconds,
+      rawDataSource.static_duration ||
+      rawDataSource.static_duration_in_seconds,
     delayTime:
       rawDataSource.delayTime ||
       rawDataSource.delay ||
-      (rawDataSource as any).delay_time ||
-      (rawDataSource as any).peak_delay_seconds,
+      rawDataSource.delay_time ||
+      rawDataSource.peak_delay_seconds,
   }
 
   const {

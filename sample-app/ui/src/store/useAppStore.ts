@@ -263,7 +263,7 @@ interface AppActions {
     fetchedFor?: FetchedForInfo,
   ) => void
 
-  setMapData: (data: MapData) => void
+  setMapData: (data: MapData | null) => void
   setShouldUseGreyRoutes: (shouldUse: boolean) => void
 
   setTimeReplayState: (state: Partial<AppState["timeReplayState"]>) => void
@@ -471,6 +471,19 @@ export const useAppStore = create(
             )
             if (boston) {
               get().selectCity(boston.id)
+            }
+          } else {
+            // Returning to the dashboard: the agent tab pans/zooms the map via
+            // fitBounds, so restore it to the selected city's default view.
+            const state = get()
+            const city = state.selectedCity
+            const map = state.refs.map
+            if (map && city && city.id !== "fallback") {
+              updateMapPosition(
+                map,
+                city.coords,
+                city.customZoom?.[state.usecase] || city.zoom,
+              )
             }
           }
         },
@@ -1833,7 +1846,7 @@ export const useAppStore = create(
             },
           }),
 
-        setMapData: (data: MapData) => set({ mapData: data }),
+        setMapData: (data: MapData | null) => set({ mapData: data }),
         setShouldUseGreyRoutes: (shouldUse: boolean) =>
           set({ shouldUseGreyRoutes: shouldUse }),
         setTimeReplayState: (state: Partial<AppState["timeReplayState"]>) => {

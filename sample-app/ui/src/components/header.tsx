@@ -49,7 +49,9 @@ const TabContainer = styled(Box)({
   },
 })
 
-const TabButton = styled(Button)<{ isActive: boolean }>(({ isActive }) => ({
+const TabButton = styled(Button, {
+  shouldForwardProp: (prop) => prop !== "isActive",
+})<{ isActive: boolean }>(({ isActive }) => ({
   borderRadius: "20px",
   padding: "5px 14px",
   fontSize: "13px",

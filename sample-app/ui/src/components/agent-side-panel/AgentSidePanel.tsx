@@ -29,7 +29,7 @@ import {
 } from "@mui/material"
 import { styled } from "@mui/material/styles"
 import React, { useEffect, useRef, useState } from "react"
-import ReactMarkdown from "react-markdown"
+import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 
 import { getRouteColor } from "../../data/common/route-color"
@@ -91,6 +91,25 @@ interface ChatMessage {
   status?: string
   isStreaming?: boolean
   renderedRoutes?: RouteSegment[]
+}
+
+// Shape of a feature emitted by the server's render_agent_routes SSE event.
+// The server (_extract_features_from_rows) normalizes these fields.
+interface RawAgentFeatureProps {
+  id?: string
+  selected_route_id?: string
+  name?: string
+  display_name?: string
+  duration?: number
+  static_duration?: number
+  delay_time?: number
+  delay_ratio?: number
+  length?: number
+}
+
+interface RawAgentFeature {
+  geometry?: { coordinates?: number[][] }
+  properties?: RawAgentFeatureProps
 }
 
 const QUICK_PROMPTS = [
@@ -265,28 +284,32 @@ export const AgentSidePanel: React.FC = () => {
         // The server (_extract_features_from_rows) already normalizes and
         // computes delay_ratio/delay_time, so trust those fields directly and
         // reuse the shared getRouteColor helper for coloring.
-        const routeSegments: RouteSegment[] = rawFeatures.map((f: any) => {
-          const props = f.properties || {}
-          const path = (f.geometry?.coordinates || []).map((c: number[]) => ({
-            lng: c[0],
-            lat: c[1],
-          }))
-          const duration = props.duration || 0
-          const staticDuration = props.static_duration || 0
-          const delayTime = props.delay_time ?? 0
-          const delayRatio = props.delay_ratio ?? 1
-          return {
-            id: props.id || props.selected_route_id,
-            name: props.name || props.display_name || props.id,
-            path,
-            duration,
-            staticDuration,
-            delayRatio,
-            delayTime,
-            color: getRouteColor(delayRatio, delayTime),
-            length: props.length || 0,
-          }
-        })
+        const routeSegments: RouteSegment[] = rawFeatures.map(
+          (f: RawAgentFeature) => {
+            const props: RawAgentFeatureProps = f.properties || {}
+            const path = (f.geometry?.coordinates || []).map(
+              (c: number[]) => ({
+                lng: c[0],
+                lat: c[1],
+              }),
+            )
+            const duration = props.duration || 0
+            const staticDuration = props.static_duration || 0
+            const delayTime = props.delay_time ?? 0
+            const delayRatio = props.delay_ratio ?? 1
+            return {
+              id: props.id || props.selected_route_id || "",
+              name: props.name || props.display_name || props.id,
+              path,
+              duration,
+              staticDuration,
+              delayRatio,
+              delayTime,
+              color: getRouteColor(delayRatio, delayTime),
+              length: props.length || 0,
+            }
+          },
+        )
 
         useAppStore.getState().setMapData(convertToGeoJSON(routeSegments))
 
@@ -408,6 +431,7 @@ export const AgentSidePanel: React.FC = () => {
               sx={{
                 alignSelf: msg.sender === "user" ? "flex-end" : "flex-start",
                 maxWidth: "88%",
+                minWidth: 0,
               }}
             >
               <Box
@@ -419,8 +443,10 @@ export const AgentSidePanel: React.FC = () => {
                     msg.sender === "user"
                       ? "16px 16px 4px 16px"
                       : "16px 16px 16px 4px",
-                  padding: "10px 14px",
+                  padding: "12px 14px",
                   boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+                  minWidth: 0,
+                  overflow: "hidden",
                 }}
               >
                 {msg.status && (
@@ -512,13 +538,102 @@ export const AgentSidePanel: React.FC = () => {
 
                 <Box
                   sx={{
-                    "& p": { m: 0, mb: 1, "&:last-child": { mb: 0 } },
-                    "& strong": { fontWeight: 600 },
                     lineHeight: 1.5,
                     fontSize: "0.875rem",
+                    overflowWrap: "anywhere",
+                    wordBreak: "break-word",
+                    "& p": { m: 0, mb: 1, "&:last-child": { mb: 0 } },
+                    "& strong": { fontWeight: 600 },
+                    "& a": {
+                      color: "#1a73e8",
+                      overflowWrap: "anywhere",
+                      wordBreak: "break-word",
+                    },
+                    "& ul, & ol": { m: "4px 0 8px", pl: "20px" },
+                    "& li": { mb: "2px" },
+                    "& h1, & h2, & h3, & h4": {
+                      m: "10px 0 6px",
+                      lineHeight: 1.3,
+                      fontWeight: 600,
+                    },
+                    "& h1": { fontSize: "1.05rem" },
+                    "& h2": { fontSize: "1rem" },
+                    "& h3, & h4": { fontSize: "0.92rem" },
+                    "& blockquote": {
+                      m: "8px 0",
+                      pl: "10px",
+                      borderLeft: "3px solid #dadce0",
+                      color: "#5f6368",
+                    },
+                    "& img": { maxWidth: "100%" },
+                    "& code": {
+                      fontFamily:
+                        "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                      backgroundColor: "#eceff1",
+                      padding: "1px 5px",
+                      borderRadius: "4px",
+                      fontSize: "0.82em",
+                      overflowWrap: "anywhere",
+                    },
+                    "& pre": {
+                      m: "8px 0",
+                      p: "10px 12px",
+                      backgroundColor: "#f8f9fa",
+                      border: "1px solid #e8eaed",
+                      borderRadius: "6px",
+                      overflowX: "auto",
+                      maxWidth: "100%",
+                      "&::-webkit-scrollbar": { height: "8px" },
+                      "&::-webkit-scrollbar-thumb": {
+                        backgroundColor: "#dadce0",
+                        borderRadius: "4px",
+                      },
+                    },
+                    "& pre code": {
+                      backgroundColor: "transparent",
+                      p: 0,
+                      fontSize: "0.8rem",
+                      whiteSpace: "pre",
+                    },
+                    "& table": {
+                      borderCollapse: "collapse",
+                      width: "max-content",
+                      minWidth: "100%",
+                      fontSize: "0.8rem",
+                    },
+                    "& th, & td": {
+                      border: "1px solid #e8eaed",
+                      padding: "6px 10px",
+                      whiteSpace: "nowrap",
+                      textAlign: "left",
+                    },
+                    "& th": { backgroundColor: "#f1f3f4", fontWeight: 600 },
+                    "& tr:nth-of-type(even) td": {
+                      backgroundColor: "#fafafa",
+                    },
                   }}
                 >
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      table: ({ node, ...props }) => (
+                        <Box
+                          sx={{
+                            overflowX: "auto",
+                            maxWidth: "100%",
+                            my: 1,
+                            "&::-webkit-scrollbar": { height: "8px" },
+                            "&::-webkit-scrollbar-thumb": {
+                              backgroundColor: "#dadce0",
+                              borderRadius: "4px",
+                            },
+                          }}
+                        >
+                          <table {...props} />
+                        </Box>
+                      ),
+                    } satisfies Components}
+                  >
                     {msg.text}
                   </ReactMarkdown>
                 </Box>
