@@ -41,6 +41,7 @@ import { getAvailableDays } from "../utils/formatters"
 
 export interface AppState {
   activeTab: "dashboard" | "agent"
+  preAgentCityId: string | null
   availableCities: Record<string, City>
   selectedCity: City
   selectedRouteSegment: RouteSegment | null
@@ -339,6 +340,7 @@ export const useAppStore = create(
     {
       demoMode: false,
       activeTab: "dashboard" as "dashboard" | "agent",
+      preAgentCityId: null,
       alerts: null,
       availableCities: { fallback: FALLBACK_CITY },
       usecase: "realtime-monitoring" as Usecase,
@@ -461,9 +463,15 @@ export const useAppStore = create(
     (set, get) =>
       ({
         setActiveTab: (tab: "dashboard" | "agent") => {
+          const prevTab = get().activeTab
           set({ activeTab: tab })
           if (tab === "agent") {
             const state = get()
+            // Remember the city that was selected before entering the
+            // Boston-only agent tab, so we can restore it on return.
+            if (prevTab !== "agent") {
+              set({ preAgentCityId: state.selectedCity.id })
+            }
             const boston = Object.values(state.availableCities).find(
               (c) =>
                 c.id.toLowerCase() === "boston" ||
@@ -473,18 +481,13 @@ export const useAppStore = create(
               get().selectCity(boston.id)
             }
           } else {
-            // Returning to the dashboard: the agent tab pans/zooms the map via
-            // fitBounds, so restore it to the selected city's default view.
-            const state = get()
-            const city = state.selectedCity
-            const map = state.refs.map
-            if (map && city && city.id !== "fallback") {
-              updateMapPosition(
-                map,
-                city.coords,
-                city.customZoom?.[state.usecase] || city.zoom,
-              )
+            // Returning to the dashboard: the agent tab switched the map to
+            // Boston, so restore the previously selected city in full.
+            const prevCityId = get().preAgentCityId
+            if (prevCityId && prevCityId !== get().selectedCity.id) {
+              get().selectCity(prevCityId)
             }
+            set({ preAgentCityId: null })
           }
         },
         loadCities: (cities: Record<string, City>) => {
