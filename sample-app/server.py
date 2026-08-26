@@ -428,21 +428,12 @@ def _extract_features_from_rows(
             if d_time == 0.0 and dur and static_dur:
                 d_time = dur - static_dur
 
-            d_ratio = None
+            # Real ratio when both durations exist; otherwise 0.0 so the UI
+            # renders the route grey ("no data") instead of a fake severity.
             if static_dur and static_dur > 0 and dur > 0:
                 d_ratio = dur / static_dur
-            
-            if d_ratio is None:
-                if d_time > 1200:
-                    d_ratio = 2.5
-                elif d_time > 600:
-                    d_ratio = 1.8
-                elif d_time > 180:
-                    d_ratio = 1.4
-                elif d_time > 0:
-                    d_ratio = 1.25
-                else:
-                    d_ratio = 1.0
+            else:
+                d_ratio = 0.0
 
             features.append({
                 "type": "Feature",
@@ -455,10 +446,6 @@ def _extract_features_from_rows(
                     "id": rid,
                     "selected_route_id": rid,
                     "name": disp_name,
-                    "duration": dur,
-                    "static_duration": static_dur,
-                    "delay_ratio": d_ratio,
-                    "delay_time": d_time,
                     "duration": dur,
                     "static_duration": static_dur,
                     "delay_ratio": d_ratio,
@@ -488,6 +475,20 @@ async def stream_agent(message: str, city: str = "boston", session_id: str = Non
             run_config = runners.RunConfig(
                 streaming_mode=StreamingMode.SSE
             )
+
+            async def _route_features():
+                sess = await runner.session_service.get_session(
+                    app_name=runner.app_name,
+                    session_id=curr_session_id,
+                    user_id="user",
+                )
+                state = sess.state if sess else {}
+                table_rows = (
+                    state.get("candidate_table")
+                    or state.get("_last_sql_result")
+                    or []
+                )
+                return _extract_features_from_rows(table_rows, city)
 
             yield {
                 "event": "status",
@@ -531,28 +532,16 @@ async def stream_agent(message: str, city: str = "boston", session_id: str = Non
                             }
                             if tool_name == "present_final_table":
                                 try:
-                                    sess = await runner.session_service.get_session(
-                                        app_name=runner.app_name,
-                                        session_id=curr_session_id,
-                                        user_id="user",
-                                    )
-                                    state = sess.state if sess else {}
-                                    table_rows = (
-                                        state.get("candidate_table")
-                                        or state.get("_last_sql_result")
-                                        or []
-                                    )
-                                    features = _extract_features_from_rows(
-                                        table_rows, city
-                                    )
+                                    features = await _route_features()
                                     if features:
-                                        desc = tool_args.get("description", "")
                                         routes_rendered = True
                                         yield {
                                             "event": "render_agent_routes",
                                             "data": json.dumps({
                                                 "features": features,
-                                                "description": desc,
+                                                "description": tool_args.get(
+                                                    "description", ""
+                                                ),
                                             }),
                                         }
                                 except Exception as extract_err:
@@ -572,18 +561,7 @@ async def stream_agent(message: str, city: str = "boston", session_id: str = Non
             
             if not routes_rendered:
                 try:
-                    sess = await runner.session_service.get_session(
-                        app_name=runner.app_name,
-                        session_id=curr_session_id,
-                        user_id="user",
-                    )
-                    state = sess.state if sess else {}
-                    table_rows = (
-                        state.get("candidate_table")
-                        or state.get("_last_sql_result")
-                        or []
-                    )
-                    features = _extract_features_from_rows(table_rows, city)
+                    features = await _route_features()
                     if features:
                         yield {
                             "event": "render_agent_routes",
@@ -592,8 +570,8 @@ async def stream_agent(message: str, city: str = "boston", session_id: str = Non
                                 "description": "Query results",
                             }),
                         }
-                except Exception as e:
-                    pass
+                except Exception as render_err:
+                    print(f"Error rendering fallback routes: {render_err}")
 
             yield {
                 "event": "done",
