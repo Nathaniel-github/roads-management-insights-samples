@@ -9,3 +9,10 @@
 .pytest_cache/
 vendor/
 requirements.txt
+
+# Internal-only deploy tooling (never commit to this public repo)
+DEPLOYMENT_INTERNAL.md
+Dockerfile.internal
+cloudbuild.internal.yaml
+deploy-internal.sh
+.dockerignore
