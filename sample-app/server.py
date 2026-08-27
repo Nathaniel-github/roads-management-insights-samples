@@ -310,44 +310,8 @@ def _parse_geometry_to_coordinates(geom_val):
         pass
     return None
 
-def _fetch_fallback_geometries(
-    city_name: str, route_ids: list[str]
-) -> dict[str, Any]:
-    try:
-        from backend.fetch_data import get_city_config
-        from google.cloud import bigquery
-
-        config = get_city_config(city_name)
-        client = bigquery.Client(project=config["bq_project"])
-        historical_table = config["bq_historical_table"]
-        dataset = config["bq_historical_dataset"]
-        project = config["bq_project"]
-        query = f"""
-        SELECT selected_route_id, ANY_VALUE(display_name) as display_name, ANY_VALUE(ST_ASGEOJSON(route_geometry)) as route_geometry
-        FROM `{project}.{dataset}.{historical_table}`
-        WHERE selected_route_id IN UNNEST(@route_ids)
-        GROUP BY selected_route_id
-        """
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ArrayQueryParameter("route_ids", "STRING", route_ids)
-            ]
-        )
-        query_job = client.query(query, job_config=job_config)
-        results = query_job.result()
-        geom_map = {}
-        for r in results:
-            geom_map[r.selected_route_id] = {
-                "display_name": r.display_name,
-                "route_geometry": r.route_geometry,
-            }
-        return geom_map
-    except Exception as e:
-        print(f"Error fetching fallback geometries: {e}")
-        return {}
-
 def _extract_features_from_rows(
-    table_rows: list[dict[str, Any]], city: str
+    table_rows: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     if not table_rows or not isinstance(table_rows, list):
         return []
@@ -364,20 +328,11 @@ def _extract_features_from_rows(
     if not unique_route_rows:
         return []
 
-    all_ids = list(seen_ids)
-    fallback_map = _fetch_fallback_geometries(city, all_ids)
-
     features = []
     for r in unique_route_rows:
         rid = r.get("selected_route_id")
-        
-        db_info = fallback_map.get(rid, {})
-        coords = _parse_geometry_to_coordinates(db_info.get("route_geometry"))
-        
-        if not coords:
-            coords = _parse_geometry_to_coordinates(r.get("route_geometry"))
-
-        disp_name = db_info.get("display_name") or r.get("display_name") or rid
+        coords = _parse_geometry_to_coordinates(r.get("route_geometry"))
+        disp_name = r.get("display_name") or rid
 
         if coords:
             dur = 0
@@ -488,7 +443,7 @@ async def stream_agent(message: str, city: str = "boston", session_id: str = Non
                     or state.get("_last_sql_result")
                     or []
                 )
-                return _extract_features_from_rows(table_rows, city)
+                return _extract_features_from_rows(table_rows)
 
             yield {
                 "event": "status",
@@ -505,8 +460,8 @@ async def stream_agent(message: str, city: str = "boston", session_id: str = Non
                     role="user",
                     parts=[types.Part.from_text(text=message + (
                         "\n\n[System instruction: If this request requires finding specific routes that can be visualized on a map, "
-                        "your final SQL query MUST explicitly select 'selected_route_id', 'duration', and 'static_duration' so the UI "
-                        "can construct the visualizations. Do NOT query or fetch route_geometry (the frontend handles topology automatically). "
+                        "your final SQL query MUST explicitly select 'selected_route_id', 'duration', 'static_duration', and "
+                        "'ST_ASGEOJSON(route_geometry) AS route_geometry' so the UI can construct the visualizations. "
                         "If this is purely a high-level analytical query, ignore this rule.]"
                     ))],
                 ),

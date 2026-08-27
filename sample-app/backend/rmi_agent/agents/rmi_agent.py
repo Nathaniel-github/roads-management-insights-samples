@@ -104,7 +104,14 @@ def _strip_sql_results(
 
       limit = common_flags.SQL_TRUNCATION_LIMIT.value
       tool_response["total_rows_fetched"] = len(rows)
-      tool_response["rows"] = rows[:limit]
+      # Keep geometry in the stashed rows (the UI needs it) but drop it from
+      # the truncated preview so heavy GeoJSON never enters the LLM context.
+      tool_response["rows"] = [
+          {k: v for k, v in row.items() if k != "route_geometry"}
+          if isinstance(row, dict)
+          else row
+          for row in rows[:limit]
+      ]
 
       tool_response["message"] = (
           f"Showing {limit} of {len(rows)} rows. "
