@@ -13,8 +13,10 @@
 // limitations under the License.
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome"
 import CloseIcon from "@mui/icons-material/Close"
+import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen"
 import ExpandLessIcon from "@mui/icons-material/ExpandLess"
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore"
+import OpenInFullIcon from "@mui/icons-material/OpenInFull"
 import SendIcon from "@mui/icons-material/Send"
 import {
   Box,
@@ -36,13 +38,13 @@ import { getRouteColor } from "../../data/common/route-color"
 import { convertToGeoJSON } from "../../deck-gl/helpers"
 import { useAppStore } from "../../store"
 import { RouteSegment } from "../../types/route-segment"
+import { getEffectivePanelWidth } from "./layout"
 
 const DrawerContainer = styled(Paper)({
   position: "fixed",
   top: "64px",
   left: 0,
   bottom: 0,
-  width: "420px",
   zIndex: 100,
   display: "flex",
   flexDirection: "column",
@@ -50,9 +52,6 @@ const DrawerContainer = styled(Paper)({
   boxShadow: "4px 0 20px rgba(0, 0, 0, 0.08)",
   borderRight: "1px solid #e8eaed",
   overflow: "hidden",
-  "@media (max-width: 768px)": {
-    width: "100%",
-  },
 })
 
 const Header = styled(Box)({
@@ -131,6 +130,18 @@ export const AgentSidePanel: React.FC = () => {
   const setActiveTab = useAppStore((state) => state.setActiveTab)
   const setSelectedRouteId = useAppStore((state) => state.setSelectedRouteId)
   const map = useAppStore((state) => state.refs.map)
+  const agentPanelWidth = useAppStore((state) => state.agentPanelWidth)
+  const agentPanelExpanded = useAppStore((state) => state.agentPanelExpanded)
+  const setAgentPanelWidth = useAppStore((state) => state.setAgentPanelWidth)
+  const setAgentPanelExpanded = useAppStore(
+    (state) => state.setAgentPanelExpanded,
+  )
+  const [isResizing, setIsResizing] = useState(false)
+  const isResizingRef = useRef(false)
+  const effectiveWidth = getEffectivePanelWidth(
+    agentPanelWidth,
+    agentPanelExpanded,
+  )
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -145,6 +156,35 @@ export const AgentSidePanel: React.FC = () => {
       eventSourceRef.current?.close()
     }
   }, [])
+
+  // Drag-to-resize: the panel is docked at left:0, so the pointer's X position
+  // is the desired width. Listeners live on window so the drag keeps tracking
+  // even when the cursor moves over the map. Width clamping/persistence is
+  // handled by the store's setAgentPanelWidth.
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizingRef.current) return
+      setAgentPanelWidth(e.clientX)
+    }
+    const handleMouseUp = () => {
+      if (!isResizingRef.current) return
+      isResizingRef.current = false
+      setIsResizing(false)
+    }
+    window.addEventListener("mousemove", handleMouseMove)
+    window.addEventListener("mouseup", handleMouseUp)
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove)
+      window.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [setAgentPanelWidth])
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    if (agentPanelExpanded) return
+    e.preventDefault()
+    isResizingRef.current = true
+    setIsResizing(true)
+  }
 
   const toggleThoughts = (id: string) => {
     setShowThoughts((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -427,7 +467,15 @@ export const AgentSidePanel: React.FC = () => {
   }
 
   return (
-    <DrawerContainer elevation={2}>
+    <DrawerContainer
+      elevation={2}
+      sx={{
+        width: { xs: "100%", md: `${effectiveWidth}px` },
+        transition: isResizing
+          ? "none"
+          : "width 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+      }}
+    >
       <Header>
         <Box sx={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <AutoAwesomeIcon sx={{ color: "#1a73e8" }} />
@@ -443,9 +491,23 @@ export const AgentSidePanel: React.FC = () => {
             </Typography>
           </Box>
         </Box>
-        <IconButton size="small" onClick={handleClose}>
-          <CloseIcon fontSize="small" />
-        </IconButton>
+        <Box sx={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          <IconButton
+            size="small"
+            onClick={() => setAgentPanelExpanded(!agentPanelExpanded)}
+            title={agentPanelExpanded ? "Collapse panel" : "Expand panel"}
+            sx={{ display: { xs: "none", md: "inline-flex" } }}
+          >
+            {agentPanelExpanded ? (
+              <CloseFullscreenIcon fontSize="small" />
+            ) : (
+              <OpenInFullIcon fontSize="small" />
+            )}
+          </IconButton>
+          <IconButton size="small" onClick={handleClose}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Box>
       </Header>
 
       <MessagesContainer>
@@ -902,6 +964,39 @@ export const AgentSidePanel: React.FC = () => {
           </IconButton>
         </Box>
       </InputContainer>
+
+      {!agentPanelExpanded && (
+        <Box
+          onMouseDown={handleResizeStart}
+          sx={{
+            position: "absolute",
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: "6px",
+            cursor: "col-resize",
+            zIndex: 20,
+            display: { xs: "none", md: "block" },
+            transition: "background-color 0.15s ease",
+            backgroundColor: isResizing
+              ? "rgba(26, 115, 232, 0.28)"
+              : "transparent",
+            "&:hover": { backgroundColor: "rgba(26, 115, 232, 0.16)" },
+          }}
+        />
+      )}
+
+      {isResizing && (
+        <Box
+          sx={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 2000,
+            cursor: "col-resize",
+            userSelect: "none",
+          }}
+        />
+      )}
     </DrawerContainer>
   )
 }

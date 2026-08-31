@@ -36,6 +36,7 @@ import { RouteReliabilityPage } from "../../usecases/route-reliability/page"
 import Loader from "./loader"
 import UnifiedMap from "./unified-map"
 import { AgentSidePanel } from "../../components/agent-side-panel"
+import { getEffectivePanelWidth } from "../../components/agent-side-panel/layout"
 
 const mapReveal = keyframes`
   0% {
@@ -91,6 +92,12 @@ const DemoContent: React.FC = () => {
   const timeFilters = useAppStore((state) => state.timeFilters)
   const activeTab = useAppStore((state) => state.activeTab)
   const isAgentTab = activeTab === "agent"
+  const agentPanelWidth = useAppStore((state) => state.agentPanelWidth)
+  const agentPanelExpanded = useAppStore((state) => state.agentPanelExpanded)
+  const effectivePanelWidth = getEffectivePanelWidth(
+    agentPanelWidth,
+    agentPanelExpanded,
+  )
   const setAlerts = useAppStore((state) => state.setAlerts)
   const setMapData = useAppStore((state) => state.setMapData)
   const { resetMapData, resetSelectedRoute } = useMapContext()
@@ -127,8 +134,13 @@ const DemoContent: React.FC = () => {
         sx={{
           ...(isAgentTab
             ? {
-                left: { xs: 0, md: "420px" },
-                width: { xs: "100%", md: "calc(100% - 420px)" },
+                left: { xs: 0, md: `${effectivePanelWidth}px` },
+                width: {
+                  xs: "100%",
+                  md: `calc(100% - ${effectivePanelWidth}px)`,
+                },
+                transition:
+                  "left 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
               }
             : {}),
         }}

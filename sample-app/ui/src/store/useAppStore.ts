@@ -16,6 +16,13 @@ import type { FeatureCollection } from "geojson"
 import { create } from "zustand"
 import { combine } from "zustand/middleware"
 
+import {
+  AGENT_PANEL_EXPANDED_STORAGE_KEY,
+  AGENT_PANEL_WIDTH_STORAGE_KEY,
+  clampPanelWidth,
+  readStoredPanelExpanded,
+  readStoredPanelWidth,
+} from "../components/agent-side-panel/layout"
 import type {
   RouteAlert,
   RouteAlertWithPosition,
@@ -41,6 +48,8 @@ import { getAvailableDays } from "../utils/formatters"
 
 export interface AppState {
   activeTab: "dashboard" | "agent"
+  agentPanelWidth: number
+  agentPanelExpanded: boolean
   preAgentCityId: string | null
   availableCities: Record<string, City>
   selectedCity: City
@@ -179,6 +188,8 @@ export interface AppState {
 
 interface AppActions {
   setActiveTab: (tab: "dashboard" | "agent") => void
+  setAgentPanelWidth: (width: number) => void
+  setAgentPanelExpanded: (expanded: boolean) => void
   loadCities: (cities: Record<string, City>) => void
   setUsecase: (usecase: Usecase) => void
   setSelectedRouteSegment: (route: RouteSegment | null) => void
@@ -340,6 +351,8 @@ export const useAppStore = create(
     {
       demoMode: false,
       activeTab: "dashboard" as "dashboard" | "agent",
+      agentPanelWidth: readStoredPanelWidth(),
+      agentPanelExpanded: readStoredPanelExpanded(),
       preAgentCityId: null,
       alerts: null,
       availableCities: { fallback: FALLBACK_CITY },
@@ -488,6 +501,25 @@ export const useAppStore = create(
               get().selectCity(prevCityId)
             }
             set({ preAgentCityId: null })
+          }
+        },
+        setAgentPanelWidth: (width: number) => {
+          const clamped = clampPanelWidth(width)
+          set({ agentPanelWidth: clamped })
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(
+              AGENT_PANEL_WIDTH_STORAGE_KEY,
+              String(clamped),
+            )
+          }
+        },
+        setAgentPanelExpanded: (expanded: boolean) => {
+          set({ agentPanelExpanded: expanded })
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(
+              AGENT_PANEL_EXPANDED_STORAGE_KEY,
+              String(expanded),
+            )
           }
         },
         loadCities: (cities: Record<string, City>) => {
