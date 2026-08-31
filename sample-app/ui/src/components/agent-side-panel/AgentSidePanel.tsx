@@ -531,22 +531,49 @@ export const AgentSidePanel: React.FC = () => {
             <Box
               key={msg.id}
               sx={{
-                alignSelf: msg.sender === "user" ? "flex-end" : "flex-start",
-                maxWidth: "88%",
+                alignSelf:
+                  msg.sender === "user" ? "flex-end" : "stretch",
+                maxWidth: msg.sender === "user" ? "85%" : "100%",
+                width: msg.sender === "user" ? "auto" : "100%",
                 minWidth: 0,
               }}
             >
+              {msg.sender === "agent" && (
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    mb: 0.75,
+                  }}
+                >
+                  <AutoAwesomeIcon sx={{ fontSize: 16, color: "#1a73e8" }} />
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      fontWeight: 700,
+                      color: "#5f6368",
+                      letterSpacing: "0.2px",
+                    }}
+                  >
+                    Assistant
+                  </Typography>
+                </Box>
+              )}
               <Box
                 sx={{
                   backgroundColor:
-                    msg.sender === "user" ? "#e8f0fe" : "#f1f3f4",
+                    msg.sender === "user" ? "#e8f0fe" : "transparent",
                   color: "#202124",
                   borderRadius:
                     msg.sender === "user"
                       ? "16px 16px 4px 16px"
-                      : "16px 16px 16px 4px",
-                  padding: "12px 14px",
-                  boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+                      : 0,
+                  padding: msg.sender === "user" ? "12px 14px" : 0,
+                  boxShadow:
+                    msg.sender === "user"
+                      ? "0 1px 2px rgba(0,0,0,0.08)"
+                      : "none",
                   minWidth: 0,
                   overflow: "hidden",
                 }}
