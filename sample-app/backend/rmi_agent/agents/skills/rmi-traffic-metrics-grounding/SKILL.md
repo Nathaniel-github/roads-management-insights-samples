@@ -12,20 +12,16 @@ description: >
 
 # RMI Traffic Metrics Grounding Skill
 
-## When to Use This Skill
-
-Activate this skill when the user asks about **traffic performance** —
-congestion severity, travel time reliability, delay, speed breakdowns,
-before/after comparisons, or network health.
-
 ## Metrics
 
 ### A1. Travel Time Index (TTI)
 
--   **Triggers**: "how congested", "congestion level", "traffic conditions"
+-   **Triggers**: "how congested", "congestion level", "traffic conditions",
+    "delay ratio", "delay index", "avg_delay_ratio", "avg_delay_index"
 -   **Formula**: TTI = duration_in_seconds / static_duration_in_seconds
--   **Interpretation**: 1.0 = free-flow. 1.3 = 30% slower. > 2.0 = severe.
--   **Aggregations**: by route, hour-of-day, day-of-week, date
+-   **Interpretation**: 1.0 = free-flow. 1.3 = 30% slower.
+-   **Aliases**: "delay ratio", "delay index", "congestion ratio". When the user
+    asks for any of these, use this TTI formula (`duration / static`).
 
 ```sql
 SELECT
@@ -75,7 +71,7 @@ SELECT
   ANY_VALUE(display_name) AS display_name,
   EXTRACT(
     HOUR FROM record_time
-      AT TIME ZONE 'America/New_York'
+      AT TIME ZONE '<TIMEZONE>' -- e.g., 'America/New_York', 'America/Los_Angeles'
   ) AS local_hour,
   AVG(duration_in_seconds) AS avg_duration,
   APPROX_QUANTILES(
@@ -135,38 +131,38 @@ SELECT
   CASE
     WHEN EXTRACT(
            DAYOFWEEK FROM record_time
-             AT TIME ZONE 'America/New_York'
+             AT TIME ZONE '<TIMEZONE>'
          ) IN (1, 7)
          AND EXTRACT(
                HOUR FROM record_time
-                 AT TIME ZONE 'America/New_York'
+                 AT TIME ZONE '<TIMEZONE>'
              ) BETWEEN 6 AND 19
       THEN 'Weekend'
     WHEN EXTRACT(
            DAYOFWEEK FROM record_time
-             AT TIME ZONE 'America/New_York'
+             AT TIME ZONE '<TIMEZONE>'
          ) NOT IN (1, 7)
          AND EXTRACT(
                HOUR FROM record_time
-                 AT TIME ZONE 'America/New_York'
+                 AT TIME ZONE '<TIMEZONE>'
              ) BETWEEN 6 AND 9
       THEN 'AM_Peak'
     WHEN EXTRACT(
            DAYOFWEEK FROM record_time
-             AT TIME ZONE 'America/New_York'
+             AT TIME ZONE '<TIMEZONE>'
          ) NOT IN (1, 7)
          AND EXTRACT(
                HOUR FROM record_time
-                 AT TIME ZONE 'America/New_York'
+                 AT TIME ZONE '<TIMEZONE>'
              ) BETWEEN 10 AND 15
       THEN 'Midday'
     WHEN EXTRACT(
            DAYOFWEEK FROM record_time
-             AT TIME ZONE 'America/New_York'
+             AT TIME ZONE '<TIMEZONE>'
          ) NOT IN (1, 7)
          AND EXTRACT(
                HOUR FROM record_time
-                 AT TIME ZONE 'America/New_York'
+                 AT TIME ZONE '<TIMEZONE>'
              ) BETWEEN 16 AND 19
       THEN 'PM_Peak'
     ELSE 'Off_Peak'
@@ -212,8 +208,7 @@ GROUP BY selected_route_id
     time"
 -   **Formula**: % Congested = count(TTI > threshold) / count(all)
 -   **Threshold**: default TTI > 1.25. Ask user for preference.
--   **Interpretation**: temporal frequency of congestion. Distinct from TTI
-    (severity at a moment).
+-   **Interpretation**: temporal frequency of congestion. Distinct from TTI.
 
 ```sql
 SELECT
@@ -252,18 +247,16 @@ GROUP BY selected_route_id
     improved.
 
 The example below uses TTI. Substitute any metric formula depending on the
-user's request. The `execute_sql` tool does not support `@` parameterized
-queries — the agent must ask the user for the cutoff date (never guess) and
-dynamically inline it as a `TIMESTAMP('YYYY-MM-DD')` literal during SQL
-synthesis. Ensure before and after date ranges are balanced to avoid seasonal
-bias.
+user's request. Dynamically inline timestamps as `TIMESTAMP('YYYY-MM-DD',
+'<TIMEZONE>')` during SQL synthesis using the roadway's local timezone. Ensure
+before and after date ranges are balanced to avoid seasonal bias.
 
 ```sql
 SELECT
   selected_route_id,
   ANY_VALUE(display_name) AS display_name,
   AVG(IF(
-    record_time < TIMESTAMP('2025-10-15'), -- Cutoff date dynamically inlined from user
+    record_time < TIMESTAMP('2025-10-15', '<TIMEZONE>'), -- Cutoff date and local timezone dynamically inlined
     SAFE_DIVIDE(
       duration_in_seconds,
       static_duration_in_seconds
@@ -271,7 +264,7 @@ SELECT
     NULL
   )) AS tti_before,
   AVG(IF(
-    record_time >= TIMESTAMP('2025-10-15'), -- Cutoff date dynamically inlined from user
+    record_time >= TIMESTAMP('2025-10-15', '<TIMEZONE>'), -- Cutoff date and local timezone dynamically inlined
     SAFE_DIVIDE(
       duration_in_seconds,
       static_duration_in_seconds
@@ -279,14 +272,14 @@ SELECT
     NULL
   )) AS tti_after,
   AVG(IF(
-    record_time >= TIMESTAMP('2025-10-15'),
+    record_time >= TIMESTAMP('2025-10-15', '<TIMEZONE>'),
     SAFE_DIVIDE(
       duration_in_seconds,
       static_duration_in_seconds
     ),
     NULL
   )) - AVG(IF(
-    record_time < TIMESTAMP('2025-10-15'),
+    record_time < TIMESTAMP('2025-10-15', '<TIMEZONE>'),
     SAFE_DIVIDE(
       duration_in_seconds,
       static_duration_in_seconds
@@ -343,10 +336,7 @@ GROUP BY selected_route_id, record_time
 
 ```sql
 SELECT
-  TIMESTAMP_TRUNC(
-    record_time, HOUR,
-    'America/New_York'
-  ) AS local_hour,
+  TIMESTAMP_TRUNC(record_time, HOUR, '<TIMEZONE>') AS local_hour,
   COUNT(DISTINCT selected_route_id) AS total_routes,
   COUNT(DISTINCT IF(
     EXISTS(
@@ -377,10 +367,11 @@ ORDER BY local_hour
 ## Caveats
 
 1.  **Timezone**: `record_time` is stored as UTC. Always apply `AT TIME ZONE
-    'America/New_York'` when extracting hours, days, or day-of-week for peak
-    period classification. Omitting this shifts peak hours by 4–5 hours. This
-    timezone is correct for the current Boston metro area dataset — update all
-    SQL templates if the dataset expands to other regions.
+    '<TIMEZONE>'` (using the appropriate local IANA timezone for the target
+    region/roadway, e.g., `'America/New_York'`, `'America/Los_Angeles'`,
+    `'America/Chicago'`, etc.) when extracting hours, days, or day-of-week for
+    peak period classification. Anchor literal cutoff timestamps using
+    `TIMESTAMP('YYYY-MM-DD', '<TIMEZONE>')`.
 
 2.  **No numeric speed**: RMI provides categorical speed
     (NORMAL/SLOW/TRAFFIC_JAM), not km/h. Never report "average speed."
@@ -395,16 +386,10 @@ ORDER BY local_hour
     all weekday off-peak hours are 'Off_Peak'. BigQuery `EXTRACT(DAYOFWEEK)`
     returns 1 = Sunday, 7 = Saturday.
 
-5.  **Before/After balance (A8)**: ensure before and after date ranges are
-    balanced (e.g., 4 weeks before vs. 4 weeks after) to avoid day-of-week and
-    seasonal bias. Always require a date from the user; do not guess. Use inline
-    `TIMESTAMP('YYYY-MM-DD')` literals — `@` parameterized queries are not
-    supported by `execute_sql`.
-
-6.  **% Time Congested threshold (A7)**: default to TTI > 1.25. Ask the user if
+5.  **% Time Congested threshold (A7)**: default to TTI > 1.25. Ask the user if
     they want a different threshold.
 
-7.  **Percentile computation**: `APPROX_QUANTILES(value, 100)` returns a
+6.  **Percentile computation**: `APPROX_QUANTILES(value, 100)` returns a
     101-element array (indices 0–100). `[OFFSET(N)]` extracts the Nth
     percentile. For P95 use `[OFFSET(95)]`, for P80 use `[OFFSET(80)]`. Adapt
     the offset for any user-requested percentile.

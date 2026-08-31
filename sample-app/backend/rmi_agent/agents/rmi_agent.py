@@ -203,6 +203,7 @@ def get_rmi_agent_instruction(unused_ctx: object | None = None) -> str:
           DAY_OF_WEEK=day_of_week,
           DATE_STR=date_str,
       )
+      + prompts.AGENT_IDENTITY
       + SMOKETEST_INSTRUCTION
   )
 
