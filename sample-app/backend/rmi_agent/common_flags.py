@@ -13,7 +13,7 @@ GCP_PROJECT = flags.DEFINE_string(
 
 RMI_DATASET = flags.DEFINE_string(
     "rmi_dataset",
-    os.environ.get("RMI_DATASET", "boston_oct_2025_sample_data"),
+    os.environ.get("RMI_DATASET", "rmi_sample_data___boston"),
     "GCP dataset containing RMI tables.",
 )
 

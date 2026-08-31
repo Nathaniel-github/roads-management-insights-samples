@@ -297,21 +297,27 @@ async def get_city_metadata():
     return city_metadata
 
 
-def _parse_geometry_to_coordinates(geom_val):
+def _parse_geometry(geom_val: Any) -> dict[str, Any] | None:
     if not geom_val:
         return None
     try:
         import json
+
         if isinstance(geom_val, str):
             geom_val = json.loads(geom_val)
         if isinstance(geom_val, dict) and "coordinates" in geom_val:
-            return geom_val["coordinates"]
+            geom_type = geom_val.get("type") or "LineString"
+            return {
+                "type": geom_type,
+                "coordinates": geom_val["coordinates"],
+            }
     except Exception:
         pass
     return None
 
+
 def _extract_features_from_rows(
-    table_rows: list[dict[str, Any]]
+    table_rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     if not table_rows or not isinstance(table_rows, list):
         return []
@@ -331,10 +337,10 @@ def _extract_features_from_rows(
     features = []
     for r in unique_route_rows:
         rid = r.get("selected_route_id")
-        coords = _parse_geometry_to_coordinates(r.get("route_geometry"))
+        geom = _parse_geometry(r.get("route_geometry"))
         disp_name = r.get("display_name") or rid
 
-        if coords:
+        if geom:
             dur = 0
             for k in (
                 "duration_in_seconds",
@@ -392,10 +398,7 @@ def _extract_features_from_rows(
 
             features.append({
                 "type": "Feature",
-                "geometry": {
-                    "type": "LineString",
-                    "coordinates": coords,
-                },
+                "geometry": geom,
                 "properties": {
                     **r,
                     "id": rid,
@@ -451,19 +454,39 @@ async def stream_agent(message: str, city: str = "boston", session_id: str = Non
             }
 
             routes_rendered = False
-            has_streamed_text = False
+            streamed_turn_partial = False
+            accumulated_text = ""
+
+            _system_suffix = (
+                "\n\n[System instruction: If this request requires"
+                " finding specific routes that can be visualized"
+                " on a map, your final SQL query MUST explicitly"
+                " select 'selected_route_id', 'duration',"
+                " 'static_duration', and 'ST_ASGEOJSON"
+                "(route_geometry) AS route_geometry' so the UI"
+                " can construct the visualizations. If this is"
+                " purely a high-level analytical query, ignore"
+                " this rule."
+                "\n\nAfter your final natural-language response,"
+                " on a new line emit exactly the tag"
+                " [SUGGESTIONS] followed by a JSON array of 2-3"
+                " short, specific follow-up questions the user"
+                " might logically ask next based on what was just"
+                " discussed. Example:\n[SUGGESTIONS]"
+                '[\"Which of those routes had the worst delay'
+                ' ratio?\", \"Show the hourly breakdown for'
+                ' Route X\"]'
+                "\nDo NOT wrap the JSON in a code fence.]"
+            )
 
             async for event in runner.run_async(
                 user_id="user",
                 session_id=curr_session_id,
                 new_message=types.Content(
                     role="user",
-                    parts=[types.Part.from_text(text=message + (
-                        "\n\n[System instruction: If this request requires finding specific routes that can be visualized on a map, "
-                        "your final SQL query MUST explicitly select 'selected_route_id', 'duration', 'static_duration', and "
-                        "'ST_ASGEOJSON(route_geometry) AS route_geometry' so the UI can construct the visualizations. "
-                        "If this is purely a high-level analytical query, ignore this rule.]"
-                    ))],
+                    parts=[types.Part.from_text(
+                        text=message + _system_suffix
+                    )],
                 ),
                 run_config=run_config,
             ):
@@ -476,14 +499,19 @@ async def stream_agent(message: str, city: str = "boston", session_id: str = Non
                                 "data": json.dumps({"text": part.text})
                             }
                         elif getattr(part, "function_call", None):
+                            streamed_turn_partial = False
                             tool_name = part.function_call.name
-                            tool_args = dict(part.function_call.args) if part.function_call.args else {}
+                            tool_args = (
+                                dict(part.function_call.args)
+                                if part.function_call.args
+                                else {}
+                            )
                             yield {
                                 "event": "tool_call",
                                 "data": json.dumps({
                                     "name": tool_name,
-                                    "args": tool_args
-                                })
+                                    "args": tool_args,
+                                }),
                             }
                             if tool_name == "present_final_table":
                                 try:
@@ -500,20 +528,25 @@ async def stream_agent(message: str, city: str = "boston", session_id: str = Non
                                             }),
                                         }
                                 except Exception as extract_err:
-                                    print(f"Error processing agent routes for map: {extract_err}")
+                                    print(
+                                        "Error processing agent routes for"
+                                        f" map: {extract_err}"
+                                    )
                         elif part.text and not getattr(part, "thought", False):
                             if is_partial:
-                                has_streamed_text = True
+                                streamed_turn_partial = True
+                                accumulated_text += part.text
                                 yield {
                                     "event": "text_chunk",
-                                    "data": json.dumps({"text": part.text})
+                                    "data": json.dumps({"text": part.text}),
                                 }
-                            elif not has_streamed_text:
+                            elif not streamed_turn_partial:
+                                accumulated_text += part.text
                                 yield {
                                     "event": "text_chunk",
-                                    "data": json.dumps({"text": part.text})
+                                    "data": json.dumps({"text": part.text}),
                                 }
-            
+
             if not routes_rendered:
                 try:
                     features = await _route_features()
@@ -527,6 +560,35 @@ async def stream_agent(message: str, city: str = "boston", session_id: str = Non
                         }
                 except Exception as render_err:
                     print(f"Error rendering fallback routes: {render_err}")
+
+            # Parse [SUGGESTIONS] from the accumulated agent text.
+            _sug_match = re.search(
+                r"\[SUGGESTIONS\]\s*:?\s*(?:```(?:json)?\s*)?"
+                r"(\[[\s\S]*?\])(?:\s*```)?",
+                accumulated_text,
+            )
+            if _sug_match:
+                try:
+                    _sug_list = json.loads(_sug_match.group(1))
+                    if isinstance(_sug_list, list) and _sug_list:
+                        print(
+                            f"[RMI Agent] Emitted {len(_sug_list)} suggestions:"
+                            f" {_sug_list}"
+                        )
+                        yield {
+                            "event": "suggestions",
+                            "data": json.dumps({"suggestions": _sug_list}),
+                        }
+                except (json.JSONDecodeError, TypeError) as parse_err:
+                    print(
+                        "[RMI Agent] Suggestions JSON decode error:"
+                        f" {parse_err}"
+                    )
+            else:
+                print(
+                    "[RMI Agent] No suggestions tag found in accumulated"
+                    f" text ({len(accumulated_text)} chars)"
+                )
 
             yield {
                 "event": "done",

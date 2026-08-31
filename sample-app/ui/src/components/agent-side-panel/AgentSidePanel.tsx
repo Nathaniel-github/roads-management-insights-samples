@@ -113,14 +113,15 @@ interface RawAgentFeature {
 }
 
 const QUICK_PROMPTS = [
-  "What were the average travel times for Boston routes in Oct 2025?",
-  "Which Boston routes had peak traffic delays?",
-  "Show the operational status of routes in Boston",
+  "Scan the network for segments where current speed deviates more than 20% from the 30-day historical norm.",
+  "Which routes have the highest count of 'TRAFFIC_JAM' speed reading intervals? Return the top 10.",
+  "Which active routes experienced a travel time more than double their static baseline between 2025-10-30 and 2025-11-01?",
 ]
 
 export const AgentSidePanel: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputText, setInputText] = useState("")
+  const [suggestions, setSuggestions] = useState<string[]>(QUICK_PROMPTS)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [showThoughts, setShowThoughts] = useState<Record<string, boolean>>({})
   const [showRoutes, setShowRoutes] = useState<Record<string, boolean>>({})
@@ -188,6 +189,7 @@ export const AgentSidePanel: React.FC = () => {
 
     setMessages((prev) => [...prev, newUserMsg, newAgentMsg])
     setInputText("")
+    setSuggestions([])
 
     const cityId = selectedCity?.id || "boston"
     const sessionParam = sessionId
@@ -287,12 +289,20 @@ export const AgentSidePanel: React.FC = () => {
         const routeSegments: RouteSegment[] = rawFeatures.map(
           (f: RawAgentFeature) => {
             const props: RawAgentFeatureProps = f.properties || {}
-            const path = (f.geometry?.coordinates || []).map(
-              (c: number[]) => ({
-                lng: c[0],
-                lat: c[1],
-              }),
-            )
+            const geom = f.geometry
+            let rawCoords: number[][] = []
+            if (
+              geom?.type === "MultiLineString" &&
+              Array.isArray(geom.coordinates)
+            ) {
+              rawCoords = geom.coordinates.flat(1)
+            } else if (Array.isArray(geom?.coordinates)) {
+              rawCoords = geom.coordinates
+            }
+            const path = rawCoords.map((c: number[]) => ({
+              lng: c[0],
+              lat: c[1],
+            }))
             const duration = props.duration || 0
             const staticDuration = props.static_duration || 0
             const delayTime = props.delay_time ?? 0
@@ -311,7 +321,35 @@ export const AgentSidePanel: React.FC = () => {
           },
         )
 
-        useAppStore.getState().setMapData(convertToGeoJSON(routeSegments))
+        // Preserve the native GeoJSON geometry (LineString or MultiLineString)
+        const geoJsonFeatures = rawFeatures.map(
+          (f: RawAgentFeature, idx: number) => {
+            const seg = routeSegments[idx]
+            return {
+              type: "Feature",
+              geometry: f.geometry || {
+                type: "LineString",
+                coordinates: seg?.path.map((p) => [p.lng, p.lat]) || [],
+              },
+              properties: {
+                ...(f.properties || {}),
+                id: seg?.id || "unknown",
+                name: seg?.name || "unknown",
+                color: seg?.color || "#000000",
+                delay: seg?.delayTime || 0,
+                delayRatio: seg?.delayRatio || 0,
+                duration: seg?.duration || 0,
+                staticDuration: seg?.staticDuration || 0,
+                length: seg?.length || 0,
+              },
+            }
+          },
+        )
+
+        useAppStore.getState().setMapData({
+          type: "FeatureCollection",
+          features: geoJsonFeatures,
+        })
 
         updateAgentMsg({ renderedRoutes: routeSegments })
 
@@ -334,8 +372,34 @@ export const AgentSidePanel: React.FC = () => {
       }
     })
 
+    eventSource.addEventListener("suggestions", (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (Array.isArray(data.suggestions) && data.suggestions.length) {
+          console.log("[RMI Agent] Received suggestions:", data.suggestions)
+          setSuggestions(data.suggestions)
+        }
+      } catch (e) {
+        console.error("[RMI Agent] Failed to parse suggestions event:", e)
+      }
+    })
+
     eventSource.addEventListener("done", () => {
-      updateAgentMsg({ isStreaming: false, status: undefined })
+      // Strip [SUGGESTIONS]... from the displayed text.
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === agentMsgId
+            ? {
+                ...msg,
+                isStreaming: false,
+                status: undefined,
+                text: msg.text
+                  .replace(/\n?\[SUGGESTIONS\][\s\S]*$/, "")
+                  .trimEnd(),
+              }
+            : msg,
+        ),
+      )
       eventSource.close()
     })
 
@@ -399,30 +463,6 @@ export const AgentSidePanel: React.FC = () => {
               Ask any question about historical travel times, route slowdowns,
               or congestion in Boston.
             </Typography>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ fontWeight: 600, mt: 1 }}
-            >
-              Suggested queries:
-            </Typography>
-            {QUICK_PROMPTS.map((prompt, idx) => (
-              <Chip
-                key={idx}
-                label={prompt}
-                onClick={() => handleSend(prompt)}
-                sx={{
-                  justifyContent: "flex-start",
-                  height: "auto",
-                  py: 1,
-                  px: 0.5,
-                  "& .MuiChip-label": {
-                    whiteSpace: "normal",
-                    textAlign: "left",
-                  },
-                }}
-              />
-            ))}
           </Box>
         ) : (
           messages.map((msg) => (
@@ -634,7 +674,7 @@ export const AgentSidePanel: React.FC = () => {
                       ),
                     } satisfies Components}
                   >
-                    {msg.text}
+                    {msg.text.replace(/\n?\[SUGGEST[\s\S]*$/, "")}
                   </ReactMarkdown>
                 </Box>
 
@@ -787,6 +827,40 @@ export const AgentSidePanel: React.FC = () => {
         )}
         <div ref={messagesEndRef} />
       </MessagesContainer>
+
+      {suggestions.length > 0 && (
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "6px",
+            px: 2,
+            py: 1,
+            borderTop: "1px solid #e8eaed",
+            backgroundColor: "#f8f9fa",
+            flexShrink: 0,
+          }}
+        >
+          {suggestions.map((s, idx) => (
+            <Chip
+              key={idx}
+              label={s}
+              onClick={() => handleSend(s)}
+              variant="outlined"
+              sx={{
+                justifyContent: "flex-start",
+                height: "auto",
+                py: 0.75,
+                px: 0.5,
+                "& .MuiChip-label": {
+                  whiteSpace: "normal",
+                  textAlign: "left",
+                },
+              }}
+            />
+          ))}
+        </Box>
+      )}
 
       <InputContainer>
         <Box sx={{ display: "flex", gap: "8px" }}>

@@ -43,13 +43,13 @@ export function createMainLayer(
     data: geoJsonData,
     stroked: false,
     filled: false,
-    lineWidthMinPixels: 5, // Increased minimum width for urban-congestion
+    lineWidthMinPixels: 1,
     pickable: true,
     autoHighlight: false, // We'll handle highlighting manually
     highlightColor: [255, 255, 255, 100],
     lineWidthUnits: "pixels",
     lineJointRounded: true, // Rounded joints for smoother appearance
-    lineCapRounded: true, // Add rounded caps at the ends of the lines
+    lineCapRounded: false, // Flat line caps prevent short segments from rendering as bubbles
     lineMiterLimit: 2, // Add miter limit for smoother joints
     pointType: "circle+text",
 
@@ -369,7 +369,7 @@ export function createColorSpecificLayer(
     data: geoJsonData,
     stroked: false,
     filled: false,
-    lineWidthMinPixels: 0.5,
+    lineWidthMinPixels: 1,
     lineWidthScale: 1,
     lineWidthMaxPixels: 10,
     pickable: true,
@@ -377,7 +377,7 @@ export function createColorSpecificLayer(
     highlightColor: [255, 255, 255, 100],
     lineWidthUnits: "pixels",
     lineJointRounded: true,
-    lineCapRounded: true,
+    lineCapRounded: false,
     pointType: "circle+text",
 
     getLineColor: (f: Feature<Geometry, RouteProperties>) => {
