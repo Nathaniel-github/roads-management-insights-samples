@@ -993,42 +993,64 @@ export const AgentSidePanel: React.FC = () => {
       {suggestions.length > 0 && messages.length > 0 && (
         <Box
           sx={{
-            display: "flex",
-            flexDirection: "row",
-            gap: "8px",
             px: 2,
-            py: 1.25,
+            py: 1.5,
             borderTop: "1px solid #e8eaed",
             backgroundColor: "#f8f9fa",
             flexShrink: 0,
-            overflowX: "auto",
-            "&::-webkit-scrollbar": { height: "6px" },
+            maxHeight: "40%",
+            overflowY: "auto",
+            "&::-webkit-scrollbar": { width: "6px" },
             "&::-webkit-scrollbar-thumb": {
               backgroundColor: "#dadce0",
               borderRadius: "3px",
             },
           }}
         >
-          {suggestions.map((s, idx) => (
-            <Chip
-              key={idx}
-              label={s}
-              title={s}
-              onClick={() => handleSend(s)}
-              variant="outlined"
-              clickable
-              sx={{
-                flexShrink: 0,
-                maxWidth: "260px",
-                borderRadius: "16px",
-                "& .MuiChip-label": {
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                },
-              }}
-            />
-          ))}
+          <Typography
+            variant="caption"
+            sx={{
+              display: "block",
+              mb: 1,
+              fontWeight: 700,
+              color: "#5f6368",
+              letterSpacing: "0.2px",
+            }}
+          >
+            Suggested follow-ups
+          </Typography>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {suggestions.map((s, idx) => (
+              <Box
+                key={idx}
+                onClick={() => handleSend(s)}
+                sx={{
+                  p: 1.25,
+                  borderRadius: "12px",
+                  border: "1px solid #e8eaed",
+                  backgroundColor: "#fff",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  transition: "all 0.15s ease",
+                  "&:hover": {
+                    backgroundColor: "#f1f6ff",
+                    borderColor: "#1a73e8",
+                    transform: "translateY(-1px)",
+                    boxShadow: "0 2px 8px rgba(26,115,232,0.12)",
+                  },
+                }}
+              >
+                <AutoAwesomeIcon
+                  sx={{ color: "#1a73e8", fontSize: 18, flexShrink: 0 }}
+                />
+                <Typography variant="body2" sx={{ color: "#202124" }}>
+                  {s}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
         </Box>
       )}
 
