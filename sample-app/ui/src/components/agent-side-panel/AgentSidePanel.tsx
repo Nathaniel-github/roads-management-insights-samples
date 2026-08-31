@@ -516,15 +516,61 @@ export const AgentSidePanel: React.FC = () => {
             sx={{
               display: "flex",
               flexDirection: "column",
-              gap: "12px",
+              gap: "16px",
               my: "auto",
               py: 2,
             }}
           >
-            <Typography variant="body2" color="text.secondary" align="center">
-              Ask any question about historical travel times, route slowdowns,
-              or congestion in Boston.
-            </Typography>
+            <Box sx={{ textAlign: "center" }}>
+              <AutoAwesomeIcon
+                sx={{ color: "#1a73e8", fontSize: 32, mb: 1 }}
+              />
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                Ask the Roads AI Assistant
+              </Typography>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ mt: 0.5 }}
+              >
+                Explore historical travel times, route slowdowns, and
+                congestion in {selectedCity?.name || "Boston"}.
+              </Typography>
+            </Box>
+            <Box
+              sx={{ display: "flex", flexDirection: "column", gap: "10px" }}
+            >
+              {QUICK_PROMPTS.map((prompt, idx) => (
+                <Box
+                  key={idx}
+                  onClick={() => handleSend(prompt)}
+                  sx={{
+                    p: 1.5,
+                    borderRadius: "12px",
+                    border: "1px solid #e8eaed",
+                    backgroundColor: "#fff",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    transition: "all 0.15s ease",
+                    "&:hover": {
+                      backgroundColor: "#f8f9fa",
+                      borderColor: "#1a73e8",
+                      transform: "translateY(-1px)",
+                      boxShadow: "0 2px 8px rgba(26,115,232,0.12)",
+                    },
+                  }}
+                >
+                  <AutoAwesomeIcon
+                    sx={{ color: "#1a73e8", fontSize: 18, flexShrink: 0 }}
+                  />
+                  <Typography variant="body2" sx={{ color: "#202124" }}>
+                    {prompt}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
           </Box>
         ) : (
           messages.map((msg) => (
@@ -917,33 +963,41 @@ export const AgentSidePanel: React.FC = () => {
         <div ref={messagesEndRef} />
       </MessagesContainer>
 
-      {suggestions.length > 0 && (
+      {suggestions.length > 0 && messages.length > 0 && (
         <Box
           sx={{
             display: "flex",
-            flexDirection: "column",
-            gap: "6px",
+            flexDirection: "row",
+            gap: "8px",
             px: 2,
-            py: 1,
+            py: 1.25,
             borderTop: "1px solid #e8eaed",
             backgroundColor: "#f8f9fa",
             flexShrink: 0,
+            overflowX: "auto",
+            "&::-webkit-scrollbar": { height: "6px" },
+            "&::-webkit-scrollbar-thumb": {
+              backgroundColor: "#dadce0",
+              borderRadius: "3px",
+            },
           }}
         >
           {suggestions.map((s, idx) => (
             <Chip
               key={idx}
               label={s}
+              title={s}
               onClick={() => handleSend(s)}
               variant="outlined"
+              clickable
               sx={{
-                justifyContent: "flex-start",
-                height: "auto",
-                py: 0.75,
-                px: 0.5,
+                flexShrink: 0,
+                maxWidth: "260px",
+                borderRadius: "16px",
                 "& .MuiChip-label": {
-                  whiteSpace: "normal",
-                  textAlign: "left",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
                 },
               }}
             />
