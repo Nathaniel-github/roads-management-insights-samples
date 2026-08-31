@@ -61,6 +61,8 @@ const Header = styled(Box)({
   padding: "16px 20px",
   backgroundColor: "#f8f9fa",
   borderBottom: "1px solid #e8eaed",
+  boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)",
+  zIndex: 1,
 })
 
 const MessagesContainer = styled(Box)({
@@ -70,6 +72,12 @@ const MessagesContainer = styled(Box)({
   display: "flex",
   flexDirection: "column",
   gap: "16px",
+  "&::-webkit-scrollbar": { width: "8px" },
+  "&::-webkit-scrollbar-thumb": {
+    backgroundColor: "#dadce0",
+    borderRadius: "4px",
+  },
+  "&::-webkit-scrollbar-thumb:hover": { backgroundColor: "#bdc1c6" },
 })
 
 const InputContainer = styled(Box)({
@@ -811,6 +819,25 @@ export const AgentSidePanel: React.FC = () => {
                   >
                     {msg.text.replace(/\n?\[SUGGEST[\s\S]*$/, "")}
                   </ReactMarkdown>
+                  {msg.isStreaming && (
+                    <Box
+                      component="span"
+                      sx={{
+                        display: "inline-block",
+                        width: "7px",
+                        height: "1em",
+                        ml: "2px",
+                        verticalAlign: "text-bottom",
+                        backgroundColor: "#1a73e8",
+                        borderRadius: "1px",
+                        animation: "rmiBlink 1s steps(1) infinite",
+                        "@keyframes rmiBlink": {
+                          "0%, 50%": { opacity: 1 },
+                          "50.01%, 100%": { opacity: 0 },
+                        },
+                      }}
+                    />
+                  )}
                 </Box>
 
                 {msg.renderedRoutes && msg.renderedRoutes.length > 0 && (
