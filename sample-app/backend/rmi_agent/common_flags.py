@@ -17,6 +17,14 @@ RMI_DATASET = flags.DEFINE_string(
     "GCP dataset containing RMI tables.",
 )
 
+RMI_DISRUPTIONS_DATASET = flags.DEFINE_string(
+    "rmi_disruptions_dataset",
+    os.environ.get(
+        "RMI_DISRUPTIONS_DATASET", "rmi_sample_data_preview_hbe_vc_boston"
+    ),
+    "GCP dataset containing RMI disruptions tables.",
+)
+
 SERVICE_ACCOUNT = flags.DEFINE_string(
     "service_account",
     os.environ.get("GOOGLE_SERVICE_ACCOUNT", ""),

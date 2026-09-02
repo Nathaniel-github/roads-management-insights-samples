@@ -47,10 +47,14 @@ Final Query Contract:
 
 Data Trust and Anti-Churn Guardrails:
 
-* Trust the documented schema above. The dataset contains exactly three
-  tables: `historical_travel_time`, `recent_roads_data`, and `routes_status`.
-  Ignore any `*_m` table variants and any other datasets; do not enumerate
-  tables, search the catalog, or query `INFORMATION_SCHEMA`.
+* Trust the documented schema above. Two datasets are authorized:
+  * `{RMI_DATASET}` — accumulated road data, with exactly three tables:
+    `historical_travel_time`, `recent_roads_data`, and `routes_status`.
+  * `{DISRUPTIONS_DATASET}` — real-time road disruptions, with exactly two
+    tables: `disruptions_nested` (curated; use this by default) and
+    `disruptions_raw` (raw Pub/Sub landing; use only for lineage/debugging).
+  Ignore any `*_m` table variants and any other datasets or tables; do not
+  enumerate tables, search the catalog, or query `INFORMATION_SCHEMA`.
 * Prefer answering directly. Avoid redundant re-derivation of a metric you
   already computed and avoid repeated volume probes (`COUNT(*)`,
   `COUNT(DISTINCT ...)`, `GROUP BY` distribution checks, `MIN`/`MAX`

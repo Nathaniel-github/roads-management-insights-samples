@@ -167,10 +167,14 @@ _GEO_SKILL_DIR = pathlib.Path(
 _METRICS_SKILL_DIR = pathlib.Path(
     str(_PACKAGE_FILES.joinpath("skills", "rmi-traffic-metrics-grounding"))
 )
+_DISRUPTIONS_SKILL_DIR = pathlib.Path(
+    str(_PACKAGE_FILES.joinpath("skills", "rmi-disruptions-grounding"))
+)
 _geo_skill = skills.load_skill_from_dir(_GEO_SKILL_DIR)
 _metrics_skill = skills.load_skill_from_dir(_METRICS_SKILL_DIR)
+_disruptions_skill = skills.load_skill_from_dir(_DISRUPTIONS_SKILL_DIR)
 rmi_skill_toolset = skill_toolset.SkillToolset(
-    skills=[_geo_skill, _metrics_skill],
+    skills=[_geo_skill, _metrics_skill, _disruptions_skill],
     additional_tools=[resolve_location.resolve_location],
 )
 
@@ -191,6 +195,7 @@ def get_rmi_agent_instruction(unused_ctx: object | None = None) -> str:
   """
   gcp_project = common_flags.GCP_PROJECT.value
   rmi_dataset = common_flags.RMI_DATASET.value
+  disruptions_dataset = common_flags.RMI_DISRUPTIONS_DATASET.value
 
   today = datetime.date.today()
   day_of_week = today.strftime("%A")
@@ -200,6 +205,7 @@ def get_rmi_agent_instruction(unused_ctx: object | None = None) -> str:
       prompts.RMI_AGENT_PROMPT.format(
           PROJECT_ID=gcp_project,
           RMI_DATASET=rmi_dataset,
+          DISRUPTIONS_DATASET=disruptions_dataset,
           DAY_OF_WEEK=day_of_week,
           DATE_STR=date_str,
       )
