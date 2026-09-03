@@ -215,7 +215,7 @@ def get_rmi_agent_instruction(unused_ctx: object | None = None) -> str:
 
 
 ROOT_AGENT = llm_agent.Agent(
-    model="gemini-3.5-flash",
+    model="gemini-3.8-flash",
     name="RMI_agent",
     description=(
         "Agent to answer questions about RMI data residing in BigQuery."

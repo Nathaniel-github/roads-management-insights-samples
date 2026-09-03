@@ -527,6 +527,41 @@ async def stream_agent(message: str, city: str = "boston", session_id: str = Non
                                                 ),
                                             }),
                                         }
+                                    sess = await runner.session_service.get_session(
+                                        app_name=runner.app_name,
+                                        session_id=curr_session_id,
+                                        user_id="user",
+                                    )
+                                    state = sess.state if sess else {}
+                                    sql = (
+                                        state.get("candidate_query")
+                                        or state.get("_last_sql_query")
+                                    )
+                                    if sql:
+                                        yield {
+                                            "event": "sql_query",
+                                            "data": json.dumps(
+                                                {"query": sql}
+                                            ),
+                                        }
+                                    table_rows = (
+                                        state.get("candidate_table")
+                                        or state.get("_last_sql_result")
+                                        or []
+                                    )
+                                    if table_rows:
+                                        yield {
+                                            "event": "table_data",
+                                            "data": json.dumps(
+                                                {
+                                                    "rows": table_rows,
+                                                    "description": tool_args.get(
+                                                        "description", ""
+                                                    ),
+                                                },
+                                                default=str,
+                                            ),
+                                        }
                                 except Exception as extract_err:
                                     print(
                                         "Error processing agent routes for"
@@ -557,6 +592,37 @@ async def stream_agent(message: str, city: str = "boston", session_id: str = Non
                                 "features": features,
                                 "description": "Query results",
                             }),
+                        }
+                    sess = await runner.session_service.get_session(
+                        app_name=runner.app_name,
+                        session_id=curr_session_id,
+                        user_id="user",
+                    )
+                    state = sess.state if sess else {}
+                    sql = (
+                        state.get("candidate_query")
+                        or state.get("_last_sql_query")
+                    )
+                    if sql:
+                        yield {
+                            "event": "sql_query",
+                            "data": json.dumps({"query": sql}),
+                        }
+                    table_rows = (
+                        state.get("candidate_table")
+                        or state.get("_last_sql_result")
+                        or []
+                    )
+                    if table_rows:
+                        yield {
+                            "event": "table_data",
+                            "data": json.dumps(
+                                {
+                                    "rows": table_rows,
+                                    "description": "Query results",
+                                },
+                                default=str,
+                            ),
                         }
                 except Exception as render_err:
                     print(f"Error rendering fallback routes: {render_err}")

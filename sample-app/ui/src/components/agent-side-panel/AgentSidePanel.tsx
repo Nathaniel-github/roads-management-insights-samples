@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome"
+import CheckIcon from "@mui/icons-material/Check"
 import CloseIcon from "@mui/icons-material/Close"
 import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen"
+import ContentCopyIcon from "@mui/icons-material/ContentCopy"
+import DownloadIcon from "@mui/icons-material/Download"
 import ExpandLessIcon from "@mui/icons-material/ExpandLess"
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore"
 import OpenInFullIcon from "@mui/icons-material/OpenInFull"
@@ -27,6 +30,7 @@ import {
   IconButton,
   Paper,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material"
 import { styled } from "@mui/material/styles"
@@ -98,6 +102,8 @@ interface ChatMessage {
   status?: string
   isStreaming?: boolean
   renderedRoutes?: RouteSegment[]
+  sqlQuery?: string
+  tableData?: Record<string, unknown>[]
 }
 
 // Shape of a feature emitted by the server's render_agent_routes SSE event.
@@ -122,7 +128,7 @@ interface RawAgentFeature {
 const QUICK_PROMPTS = [
   "Scan the network for segments where current speed deviates more than 20% from the 30-day historical norm.",
   "Which routes have the highest count of 'TRAFFIC_JAM' speed reading intervals? Return the top 10.",
-  "Which active routes experienced a travel time more than double their static baseline between 2025-10-30 and 2025-11-01?",
+  "Which active routes experienced a travel time more than double their static baseline between 2026-07-14 and 2026-07-16?",
 ]
 
 export const AgentSidePanel: React.FC = () => {
@@ -132,6 +138,8 @@ export const AgentSidePanel: React.FC = () => {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [showThoughts, setShowThoughts] = useState<Record<string, boolean>>({})
   const [showRoutes, setShowRoutes] = useState<Record<string, boolean>>({})
+  const [showSql, setShowSql] = useState<Record<string, boolean>>({})
+  const [copiedId, setCopiedId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const selectedCity = useAppStore((state) => state.selectedCity)
@@ -194,12 +202,49 @@ export const AgentSidePanel: React.FC = () => {
     setIsResizing(true)
   }
 
+  const handleCopyText = (id: string, text: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const downloadCsv = (
+    rows: Record<string, unknown>[],
+    filename: string,
+  ) => {
+    if (!rows.length) return
+    const headers = Object.keys(rows[0])
+    const escape = (v: unknown): string => {
+      const s = v == null ? "" : String(v)
+      return s.includes(",") || s.includes('"') || s.includes("\n")
+        ? `"${s.replace(/"/g, '""')}"`
+        : s
+    }
+    const lines = [
+      headers.map(escape).join(","),
+      ...rows.map((r) => headers.map((h) => escape(r[h])).join(",")),
+    ]
+    const blob = new Blob([lines.join("\n")], {
+      type: "text/csv;charset=utf-8;",
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const toggleThoughts = (id: string) => {
     setShowThoughts((prev) => ({ ...prev, [id]: !prev[id] }))
   }
 
   const toggleRoutes = (id: string) => {
     setShowRoutes((prev) => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  const toggleSql = (id: string) => {
+    setShowSql((prev) => ({ ...prev, [id]: !prev[id] }))
   }
 
   const handleRouteClick = (route: RouteSegment) => {
@@ -420,6 +465,28 @@ export const AgentSidePanel: React.FC = () => {
       }
     })
 
+    eventSource.addEventListener("sql_query", (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.query) {
+          updateAgentMsg({ sqlQuery: data.query })
+        }
+      } catch (e) {
+        console.error("Failed to parse sql_query event", e)
+      }
+    })
+
+    eventSource.addEventListener("table_data", (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (Array.isArray(data.rows) && data.rows.length) {
+          updateAgentMsg({ tableData: data.rows })
+        }
+      } catch (e) {
+        console.error("Failed to parse table_data event", e)
+      }
+    })
+
     eventSource.addEventListener("suggestions", (event) => {
       try {
         const data = JSON.parse(event.data)
@@ -608,10 +675,43 @@ export const AgentSidePanel: React.FC = () => {
                       fontWeight: 700,
                       color: "#5f6368",
                       letterSpacing: "0.2px",
+                      flex: 1,
                     }}
                   >
                     Assistant
                   </Typography>
+                  {!msg.isStreaming && msg.text && (
+                    <Tooltip
+                      title={
+                        copiedId === msg.id
+                          ? "Copied!"
+                          : "Copy response"
+                      }
+                    >
+                      <IconButton
+                        size="small"
+                        onClick={() =>
+                          handleCopyText(msg.id, msg.text)
+                        }
+                        sx={{
+                          p: 0.25,
+                          color:
+                            copiedId === msg.id
+                              ? "#34a853"
+                              : "#9aa0a6",
+                          "&:hover": { color: "#5f6368" },
+                        }}
+                      >
+                        {copiedId === msg.id ? (
+                          <CheckIcon sx={{ fontSize: 14 }} />
+                        ) : (
+                          <ContentCopyIcon
+                            sx={{ fontSize: 14 }}
+                          />
+                        )}
+                      </IconButton>
+                    </Tooltip>
+                  )}
                 </Box>
               )}
               <Box
@@ -655,28 +755,78 @@ export const AgentSidePanel: React.FC = () => {
 
                 {msg.thoughts && msg.thoughts.length > 0 && (
                   <Box sx={{ mb: 1 }}>
-                    <Button
-                      size="small"
-                      onClick={() => toggleThoughts(msg.id)}
-                      endIcon={
-                        showThoughts[msg.id] ? (
-                          <ExpandLessIcon fontSize="small" />
-                        ) : (
-                          <ExpandMoreIcon fontSize="small" />
-                        )
-                      }
+                    <Box
                       sx={{
-                        textTransform: "none",
-                        p: 0,
-                        minWidth: 0,
-                        color: "text.secondary",
-                        fontSize: "0.75rem",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 0.5,
                       }}
                     >
-                      {showThoughts[msg.id]
-                        ? "Hide thoughts"
-                        : `Show thoughts (${msg.thoughts.length})`}
-                    </Button>
+                      <Button
+                        size="small"
+                        onClick={() => toggleThoughts(msg.id)}
+                        endIcon={
+                          showThoughts[msg.id] ? (
+                            <ExpandLessIcon fontSize="small" />
+                          ) : (
+                            <ExpandMoreIcon fontSize="small" />
+                          )
+                        }
+                        sx={{
+                          textTransform: "none",
+                          p: 0,
+                          minWidth: 0,
+                          color: "text.secondary",
+                          fontSize: "0.75rem",
+                        }}
+                      >
+                        {showThoughts[msg.id]
+                          ? "Hide thoughts"
+                          : `Show thoughts (${msg.thoughts.length})`}
+                      </Button>
+                      {showThoughts[msg.id] && (
+                        <Tooltip
+                          title={
+                            copiedId ===
+                            `${msg.id}-thoughts`
+                              ? "Copied!"
+                              : "Copy thoughts"
+                          }
+                        >
+                          <IconButton
+                            size="small"
+                            onClick={() =>
+                              handleCopyText(
+                                `${msg.id}-thoughts`,
+                                msg.thoughts!.join("\n"),
+                              )
+                            }
+                            sx={{
+                              p: 0.25,
+                              color:
+                                copiedId ===
+                                `${msg.id}-thoughts`
+                                  ? "#34a853"
+                                  : "#9aa0a6",
+                              "&:hover": {
+                                color: "#5f6368",
+                              },
+                            }}
+                          >
+                            {copiedId ===
+                            `${msg.id}-thoughts` ? (
+                              <CheckIcon
+                                sx={{ fontSize: 14 }}
+                              />
+                            ) : (
+                              <ContentCopyIcon
+                                sx={{ fontSize: 14 }}
+                              />
+                            )}
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </Box>
                     <Collapse in={!!showThoughts[msg.id]}>
                       <Box
                         sx={{
@@ -685,7 +835,7 @@ export const AgentSidePanel: React.FC = () => {
                           backgroundColor: "#fff",
                           borderRadius: "4px",
                           borderLeft: "3px solid #1a73e8",
-                          maxHeight: "150px",
+                          maxHeight: "300px",
                           overflowY: "auto",
                         }}
                       >
@@ -716,6 +866,108 @@ export const AgentSidePanel: React.FC = () => {
                         sx={{ fontSize: "0.7rem", mr: 0.5, mb: 0.5 }}
                       />
                     ))}
+                  </Box>
+                )}
+
+                {msg.sqlQuery && !msg.isStreaming && (
+                  <Box sx={{ mb: 1 }}>
+                    <Button
+                      size="small"
+                      onClick={() => toggleSql(msg.id)}
+                      endIcon={
+                        showSql[msg.id] ? (
+                          <ExpandLessIcon fontSize="small" />
+                        ) : (
+                          <ExpandMoreIcon fontSize="small" />
+                        )
+                      }
+                      sx={{
+                        textTransform: "none",
+                        p: 0,
+                        minWidth: 0,
+                        color: "text.secondary",
+                        fontSize: "0.75rem",
+                      }}
+                    >
+                      {showSql[msg.id]
+                        ? "Hide SQL"
+                        : "Show SQL"}
+                    </Button>
+                    <Collapse in={!!showSql[msg.id]}>
+                      <Box
+                        sx={{
+                          mt: 0.5,
+                          position: "relative",
+                          backgroundColor: "#f8f9fa",
+                          border: "1px solid #e8eaed",
+                          borderRadius: "6px",
+                          p: "10px 12px",
+                          overflowX: "auto",
+                          "&::-webkit-scrollbar": {
+                            height: "8px",
+                          },
+                          "&::-webkit-scrollbar-thumb": {
+                            backgroundColor: "#dadce0",
+                            borderRadius: "4px",
+                          },
+                        }}
+                      >
+                        <Tooltip
+                          title={
+                            copiedId === `${msg.id}-sql`
+                              ? "Copied!"
+                              : "Copy SQL"
+                          }
+                        >
+                          <IconButton
+                            size="small"
+                            onClick={() =>
+                              handleCopyText(
+                                `${msg.id}-sql`,
+                                msg.sqlQuery!,
+                              )
+                            }
+                            sx={{
+                              position: "absolute",
+                              top: 4,
+                              right: 4,
+                              p: 0.5,
+                              color:
+                                copiedId === `${msg.id}-sql`
+                                  ? "#34a853"
+                                  : "#9aa0a6",
+                              "&:hover": {
+                                color: "#5f6368",
+                              },
+                            }}
+                          >
+                            {copiedId === `${msg.id}-sql` ? (
+                              <CheckIcon
+                                sx={{ fontSize: 14 }}
+                              />
+                            ) : (
+                              <ContentCopyIcon
+                                sx={{ fontSize: 14 }}
+                              />
+                            )}
+                          </IconButton>
+                        </Tooltip>
+                        <Box
+                          component="pre"
+                          sx={{
+                            m: 0,
+                            pr: 3,
+                            fontFamily:
+                              "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                            fontSize: "0.8rem",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {msg.sqlQuery}
+                        </Box>
+                      </Box>
+                    </Collapse>
                   </Box>
                 )}
 
@@ -983,6 +1235,46 @@ export const AgentSidePanel: React.FC = () => {
                     </Collapse>
                   </Box>
                 )}
+
+                {msg.tableData &&
+                  msg.tableData.length > 0 &&
+                  !msg.isStreaming && (
+                    <Box
+                      sx={{
+                        mt: 1,
+                        pt: 1,
+                        borderTop: "1px solid #e8eaed",
+                      }}
+                    >
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={
+                          <DownloadIcon sx={{ fontSize: 16 }} />
+                        }
+                        onClick={() =>
+                          downloadCsv(
+                            msg.tableData!,
+                            "rmi-query-results.csv",
+                          )
+                        }
+                        sx={{
+                          textTransform: "none",
+                          fontSize: "0.75rem",
+                          borderRadius: "16px",
+                          borderColor: "#e8eaed",
+                          color: "#1a73e8",
+                          "&:hover": {
+                            borderColor: "#1a73e8",
+                            backgroundColor: "#f1f6ff",
+                          },
+                        }}
+                      >
+                        Download CSV ({msg.tableData.length}{" "}
+                        rows)
+                      </Button>
+                    </Box>
+                  )}
               </Box>
             </Box>
           ))
