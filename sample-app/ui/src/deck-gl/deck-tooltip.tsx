@@ -38,6 +38,13 @@ interface TooltipDataSource {
   type?: string
   congestionLevel?: string
   historicalRouteId?: string
+  // Raw field aliases as returned by the agent's BigQuery results.
+  duration_in_seconds?: number
+  static_duration?: number
+  static_duration_in_seconds?: number
+  delay_time?: number
+  peak_delay_seconds?: number
+  display_name?: string
 }
 
 interface TooltipProps {
@@ -78,14 +85,22 @@ const DeckTooltip: React.FC<TooltipProps> = ({
   const { data: historicalData } = useAppStore(
     (state) => state.queries.filteredHistoricalData,
   )
+  const isAgentTab = useAppStore((state) => state.activeTab === "agent")
 
-  if (!hoveredObject) {
+  if (!hoveredObject && !(isAgentTab && selectedRouteSegment)) {
     return null
   }
+
   // Find the correct segment based on mode and use case
   let correctSegment: TooltipDataSource | null = null
 
-  if (
+  if (isAgentTab) {
+    // On agent tab, prioritize selectedRouteSegment, then hovered feature props
+    correctSegment =
+      (selectedRouteSegment as TooltipDataSource) ||
+      (hoveredObject?.properties as TooltipDataSource) ||
+      null
+  } else if (
     currentUsecase === "realtime-monitoring" ||
     currentUsecase === "data-analytics"
   ) {
@@ -121,13 +136,27 @@ const DeckTooltip: React.FC<TooltipProps> = ({
 
   // Use correct segment data if available, otherwise fall back to selectedRouteSegment or hoveredObject properties
   const rawDataSource: TooltipDataSource =
-    correctSegment || selectedRouteSegment || hoveredObject?.properties || {}
+    correctSegment ||
+    (selectedRouteSegment as TooltipDataSource) ||
+    hoveredObject?.properties ||
+    {}
 
   // Normalize the data structure to handle different field names between realtime and historical
   const dataSource: TooltipDataSource = {
     ...rawDataSource,
-    // Historical data uses 'averageDuration', realtime uses 'duration'
-    duration: rawDataSource.duration || rawDataSource.averageDuration,
+    duration:
+      rawDataSource.duration ||
+      rawDataSource.averageDuration ||
+      rawDataSource.duration_in_seconds,
+    staticDuration:
+      rawDataSource.staticDuration ||
+      rawDataSource.static_duration ||
+      rawDataSource.static_duration_in_seconds,
+    delayTime:
+      rawDataSource.delayTime ||
+      rawDataSource.delay ||
+      rawDataSource.delay_time ||
+      rawDataSource.peak_delay_seconds,
   }
 
   const {
@@ -138,18 +167,43 @@ const DeckTooltip: React.FC<TooltipProps> = ({
     color = "#9E9E9E",
   } = dataSource
 
+  const routeName =
+    dataSource.name ||
+    dataSource.display_name ||
+    dataSource.id ||
+    dataSource.routeId ||
+    ""
+
   // Check if route has no historical data based on color
-  const hasNoHistoricalData = color === "#9E9E9E" || color === "#9e9e9e"
+  const hasNoHistoricalData =
+    !isAgentTab && (color === "#9E9E9E" || color === "#9e9e9e")
 
   // Use delayTime directly to match the panel behavior
-  const actualDelay = delayTime || delay || 0
+  const actualDelay = isAgentTab
+    ? delayTime ||
+      delay ||
+      (duration &&
+      dataSource.staticDuration &&
+      duration > dataSource.staticDuration
+        ? duration - dataSource.staticDuration
+        : 0)
+    : delayTime || delay || 0
 
   // Ensure delay is a valid number
   const validDelay = actualDelay && !isNaN(actualDelay) ? actualDelay : 0
 
   // Calculate values for display
-  const averageDelayPercentage =
-    delayRatio && !isNaN(delayRatio) ? (delayRatio - 1) * 100 : 0
+  const averageDelayPercentage = isAgentTab
+    ? delayRatio && !isNaN(delayRatio) && delayRatio > 1
+      ? (delayRatio - 1) * 100
+      : dataSource.staticDuration &&
+          dataSource.staticDuration > 0 &&
+          validDelay > 0
+        ? (validDelay / dataSource.staticDuration) * 100
+        : 0
+    : delayRatio && !isNaN(delayRatio)
+      ? (delayRatio - 1) * 100
+      : 0
   const averageDuration = duration && !isNaN(duration) ? duration : 0
   const staticDuration =
     dataSource.staticDuration && !isNaN(dataSource.staticDuration)
@@ -157,7 +211,9 @@ const DeckTooltip: React.FC<TooltipProps> = ({
       : 0
 
   const delayToShow = shouldShowDelay(validDelay)
-    ? `${averageDelayPercentage.toFixed(1)}% (+${formatSecondsToShow(validDelay)}s)`
+    ? isAgentTab
+      ? `${averageDelayPercentage > 0 ? averageDelayPercentage.toFixed(1) + "% " : ""}(+${formatSecondsToShow(validDelay)}s)`
+      : `${averageDelayPercentage.toFixed(1)}% (+${formatSecondsToShow(validDelay)}s)`
     : "No delay"
 
   let tooltipTitle: string
@@ -165,7 +221,12 @@ const DeckTooltip: React.FC<TooltipProps> = ({
   let travelTimeText: string
   let delayText: string
 
-  if (mode === "historical") {
+  if (isAgentTab) {
+    tooltipTitle = "AI Route Analysis"
+    tooltipSubtitle = "Queried from BigQuery Traffic Data"
+    travelTimeText = "Traffic Travel Time"
+    delayText = "Peak Traffic Delay"
+  } else if (mode === "historical") {
     tooltipTitle = "Historical Analysis"
     tooltipSubtitle = hasNoHistoricalData
       ? "This route segment does not have historical traffic data for analysis."
@@ -199,7 +260,7 @@ const DeckTooltip: React.FC<TooltipProps> = ({
         boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
         padding: "12px",
         minWidth: "220px",
-        maxWidth: "280px",
+        maxWidth: isAgentTab ? "300px" : "280px",
         zIndex: 1000,
         fontFamily: '"Google Sans", Roboto, Arial, sans-serif',
         border: "1px solid rgba(0,0,0,0.12)",
@@ -213,21 +274,56 @@ const DeckTooltip: React.FC<TooltipProps> = ({
           justifyContent: "space-between",
           alignItems: "flex-start",
           marginBottom: "8px",
+          gap: isAgentTab ? "8px" : undefined,
         }}
       >
-        <h3
-          style={{
-            margin: 0,
-            fontSize: "13px",
-            fontWeight: 500,
-            color: "#1a73e8",
-            fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
-            letterSpacing: "0.1px",
-            lineHeight: "16px",
-          }}
-        >
-          {tooltipTitle}
-        </h3>
+        {isAgentTab ? (
+          <div style={{ overflow: "hidden" }}>
+            <h3
+              style={{
+                margin: 0,
+                fontSize: "13px",
+                fontWeight: 600,
+                color: "#1a73e8",
+                fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
+                letterSpacing: "0.1px",
+                lineHeight: "16px",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+              title={routeName}
+            >
+              {routeName || tooltipTitle}
+            </h3>
+            {routeName && (
+              <div
+                style={{
+                  fontSize: "10px",
+                  color: "#5f6368",
+                  fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
+                  marginTop: "2px",
+                }}
+              >
+                {tooltipTitle}
+              </div>
+            )}
+          </div>
+        ) : (
+          <h3
+            style={{
+              margin: 0,
+              fontSize: "13px",
+              fontWeight: 500,
+              color: "#1a73e8",
+              fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
+              letterSpacing: "0.1px",
+              lineHeight: "16px",
+            }}
+          >
+            {tooltipTitle}
+          </h3>
+        )}
         <button
           onClick={(e) => {
             handleClose(e)

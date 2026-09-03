@@ -116,6 +116,7 @@ export const RouteLayerRenderer: React.FC<RouteLayerRendererProps> = ({
   const setSelectedRouteSegment = useAppStore(
     (state) => state.setSelectedRouteSegment,
   )
+  const isAgentTab = useAppStore((state) => state.activeTab === "agent")
 
   // Get alerts from store and convert to AlertPoint format
   const storeAlerts = useAppStore((state) => state.alerts)
@@ -125,6 +126,13 @@ export const RouteLayerRenderer: React.FC<RouteLayerRendererProps> = ({
 
   // Convert data to GeoJSON format
   const geoJsonData = useMemo(() => {
+    if (
+      data &&
+      typeof data === "object" &&
+      (data as any).type === "FeatureCollection"
+    ) {
+      return data as FeatureCollection
+    }
     // If data is MapData, extract the features
     if (data && typeof data === "object" && "features" in data) {
       return convertToGeoJSON((data as MapData).features)
@@ -434,6 +442,23 @@ export const RouteLayerRenderer: React.FC<RouteLayerRendererProps> = ({
         }
       }
 
+      // On the agent tab, record the clicked segment so the tooltip can read it.
+      if (isAgentTab) {
+        const clickedSegment =
+          (object?.properties
+            ? { ...object.properties, id: actualRouteId }
+            : null) ||
+          (Array.isArray(data)
+            ? (data as RouteSegment[]).find((s) => s.id === actualRouteId)
+            : null) ||
+          null
+
+        if (clickedSegment) {
+          setSelectedRouteSegment(clickedSegment as any)
+          setDirectSegmentObject(clickedSegment as any)
+        }
+      }
+
       // First, cancel any ongoing animation
       cancelAnimation()
 
@@ -469,9 +494,13 @@ export const RouteLayerRenderer: React.FC<RouteLayerRendererProps> = ({
       selectedRouteId,
       onSegmentClick,
       setSelectedRouteId,
+      setSelectedRouteSegment,
+      setDirectSegmentObject,
       setTooltipCoordinates,
       cancelAnimation,
       geoJsonData,
+      data,
+      isAgentTab,
     ],
   )
 

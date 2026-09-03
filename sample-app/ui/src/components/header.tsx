@@ -13,11 +13,15 @@
 // limitations under the License.
 
 import { Menu } from "@mui/icons-material"
-import { Box } from "@mui/material"
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome"
+import DashboardIcon from "@mui/icons-material/Dashboard"
+import { Box, Button } from "@mui/material"
 import { styled } from "@mui/material/styles"
 import React, { useEffect, useRef, useState } from "react"
+import { useLocation, useNavigate } from "react-router-dom"
 
 import googleLogo from "../assets/images/google-maps-platform.svg"
+import { useAppStore } from "../store"
 
 const HeaderContainer = styled(Box)({
   position: "fixed",
@@ -28,6 +32,41 @@ const HeaderContainer = styled(Box)({
   zIndex: 1000,
   borderBottom: "1px solid #e8eaed",
 })
+
+const TabContainer = styled(Box)({
+  display: "flex",
+  alignItems: "center",
+  backgroundColor: "#f1f3f4",
+  borderRadius: "24px",
+  padding: "3px",
+  gap: "4px",
+  marginLeft: "24px",
+  "@media (max-width: 900px)": {
+    marginLeft: "12px",
+  },
+  "@media (max-width: 600px)": {
+    display: "none",
+  },
+})
+
+const TabButton = styled(Button, {
+  shouldForwardProp: (prop) => prop !== "isActive",
+})<{ isActive: boolean }>(({ isActive }) => ({
+  borderRadius: "20px",
+  padding: "5px 14px",
+  fontSize: "13px",
+  fontWeight: isActive ? 600 : 500,
+  textTransform: "none",
+  minWidth: "auto",
+  backgroundColor: isActive ? "#ffffff" : "transparent",
+  color: isActive ? "#1a73e8" : "#5f6368",
+  boxShadow: isActive ? "0 1px 3px rgba(60,64,67,0.15)" : "none",
+  transition: "all 0.2s ease",
+  "&:hover": {
+    backgroundColor: isActive ? "#ffffff" : "rgba(0,0,0,0.04)",
+    color: isActive ? "#1a73e8" : "#202124",
+  },
+}))
 
 const ImageContainer = styled(Box)({
   display: "flex",
@@ -237,6 +276,19 @@ const Header: React.FC = () => {
   const searchContainerRef = useRef<HTMLDivElement>(null)
   const mobileSearchContainerRef = useRef<HTMLDivElement>(null)
 
+  const activeTab = useAppStore((state) => state.activeTab)
+  const setActiveTab = useAppStore((state) => state.setActiveTab)
+  const location = useLocation()
+  const navigate = useNavigate()
+  const isDemoPage = location.pathname === "/demo"
+
+  const handleTabChange = (tab: "dashboard" | "agent") => {
+    setActiveTab(tab)
+    if (!isDemoPage) {
+      navigate("/demo")
+    }
+  }
+
   const handleSearchClick = () => {
     setIsSearchExpanded(true)
   }
@@ -310,13 +362,39 @@ const Header: React.FC = () => {
           >
             <Menu />
           </Box>
-          <ImageContainer>
+          <ImageContainer
+            onClick={() => navigate("/")}
+            sx={{ cursor: "pointer" }}
+          >
             <img
               src={googleLogo}
               alt="Google Logo"
               style={{ width: "256px", height: "auto" }}
             />
           </ImageContainer>
+
+          {isDemoPage && (
+            <TabContainer>
+              <TabButton
+                isActive={activeTab === "dashboard"}
+                onClick={() => handleTabChange("dashboard")}
+                startIcon={
+                  <DashboardIcon sx={{ fontSize: "16px !important" }} />
+                }
+              >
+                Dashboard
+              </TabButton>
+              <TabButton
+                isActive={activeTab === "agent"}
+                onClick={() => handleTabChange("agent")}
+                startIcon={
+                  <AutoAwesomeIcon sx={{ fontSize: "16px !important" }} />
+                }
+              >
+                AI Assistant
+              </TabButton>
+            </TabContainer>
+          )}
         </Box>
 
         {/* Desktop Search and Buttons */}

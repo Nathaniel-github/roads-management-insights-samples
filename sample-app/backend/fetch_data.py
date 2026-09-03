@@ -65,11 +65,12 @@ def get_city_config(city_name: str) -> Dict[str, str]:
         ValueError: If required environment variables are missing or invalid
     """
     try:
-        bq_project = os.getenv(f"{city_name}_BIGQUERY_PROJECT")
-        bq_historical_dataset = os.getenv(f"{city_name}_BIGQUERY_HISTORICAL_DATASET")
-        bq_historical_table = os.getenv(f"{city_name}_BIGQUERY_HISTORICAL_TABLE")
-        bq_routes_table = os.getenv(f"{city_name}_BIGQUERY_ROUTES_TABLE")
-        timezone_name = os.getenv(f"{city_name}_TIMEZONE")
+        upper_city = city_name.upper()
+        bq_project = os.getenv(f"{upper_city}_BIGQUERY_PROJECT")
+        bq_historical_dataset = os.getenv(f"{upper_city}_BIGQUERY_HISTORICAL_DATASET")
+        bq_historical_table = os.getenv(f"{upper_city}_BIGQUERY_HISTORICAL_TABLE")
+        bq_routes_table = os.getenv(f"{upper_city}_BIGQUERY_ROUTES_TABLE")
+        timezone_name = os.getenv(f"{upper_city}_TIMEZONE")
 
         if not all([bq_project, bq_historical_dataset, bq_historical_table, bq_routes_table, timezone_name]):
             raise ValueError("Required environment variables are not set.")

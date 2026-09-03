@@ -4,6 +4,11 @@
 **/.DS_Store
 **/dist
 
+# Python tooling caches (agent backend)
+**/.poetry_cache/
+**/.poetry_config/
+**/.pytest_cache/
+
 # Workspace task tracking & work logs
 TASKS.md
 WORKLOG.md

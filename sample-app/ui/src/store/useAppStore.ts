@@ -16,6 +16,13 @@ import type { FeatureCollection } from "geojson"
 import { create } from "zustand"
 import { combine } from "zustand/middleware"
 
+import {
+  AGENT_PANEL_EXPANDED_STORAGE_KEY,
+  AGENT_PANEL_WIDTH_STORAGE_KEY,
+  clampPanelWidth,
+  readStoredPanelExpanded,
+  readStoredPanelWidth,
+} from "../components/agent-side-panel/layout"
 import type {
   RouteAlert,
   RouteAlertWithPosition,
@@ -40,6 +47,10 @@ import { selectRoute } from "../usecases/realtime-monitoring/helper"
 import { getAvailableDays } from "../utils/formatters"
 
 export interface AppState {
+  activeTab: "dashboard" | "agent"
+  agentPanelWidth: number
+  agentPanelExpanded: boolean
+  preAgentCityId: string | null
   availableCities: Record<string, City>
   selectedCity: City
   selectedRouteSegment: RouteSegment | null
@@ -176,6 +187,9 @@ export interface AppState {
 }
 
 interface AppActions {
+  setActiveTab: (tab: "dashboard" | "agent") => void
+  setAgentPanelWidth: (width: number) => void
+  setAgentPanelExpanded: (expanded: boolean) => void
   loadCities: (cities: Record<string, City>) => void
   setUsecase: (usecase: Usecase) => void
   setSelectedRouteSegment: (route: RouteSegment | null) => void
@@ -244,7 +258,7 @@ interface AppActions {
   setFloatingPanelExpanded: (isExpanded: boolean) => void
   setPreviousFloatingPanelExpanded: (isExpanded: boolean) => void
 
-  setAlerts: (alerts: RouteAlert[] | RouteAlertWithPosition[]) => void
+  setAlerts: (alerts: RouteAlert[] | RouteAlertWithPosition[] | null) => void
   setQueryState: (
     queryKey: keyof AppState["queries"],
     status: "pending" | "loading" | "success" | "error",
@@ -261,7 +275,7 @@ interface AppActions {
     fetchedFor?: FetchedForInfo,
   ) => void
 
-  setMapData: (data: MapData) => void
+  setMapData: (data: MapData | null) => void
   setShouldUseGreyRoutes: (shouldUse: boolean) => void
 
   setTimeReplayState: (state: Partial<AppState["timeReplayState"]>) => void
@@ -336,6 +350,10 @@ export const useAppStore = create(
   combine(
     {
       demoMode: false,
+      activeTab: "dashboard" as "dashboard" | "agent",
+      agentPanelWidth: readStoredPanelWidth(),
+      agentPanelExpanded: readStoredPanelExpanded(),
+      preAgentCityId: null,
       alerts: null,
       availableCities: { fallback: FALLBACK_CITY },
       usecase: "realtime-monitoring" as Usecase,
@@ -457,6 +475,53 @@ export const useAppStore = create(
     } as AppState,
     (set, get) =>
       ({
+        setActiveTab: (tab: "dashboard" | "agent") => {
+          const prevTab = get().activeTab
+          set({ activeTab: tab })
+          if (tab === "agent") {
+            const state = get()
+            // Remember the city that was selected before entering the
+            // Boston-only agent tab, so we can restore it on return.
+            if (prevTab !== "agent") {
+              set({ preAgentCityId: state.selectedCity.id })
+            }
+            const boston = Object.values(state.availableCities).find(
+              (c) =>
+                c.id.toLowerCase() === "boston" ||
+                c.name.toLowerCase() === "boston",
+            )
+            if (boston) {
+              get().selectCity(boston.id)
+            }
+          } else {
+            // Returning to the dashboard: the agent tab switched the map to
+            // Boston, so restore the previously selected city in full.
+            const prevCityId = get().preAgentCityId
+            if (prevCityId && prevCityId !== get().selectedCity.id) {
+              get().selectCity(prevCityId)
+            }
+            set({ preAgentCityId: null })
+          }
+        },
+        setAgentPanelWidth: (width: number) => {
+          const clamped = clampPanelWidth(width)
+          set({ agentPanelWidth: clamped })
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(
+              AGENT_PANEL_WIDTH_STORAGE_KEY,
+              String(clamped),
+            )
+          }
+        },
+        setAgentPanelExpanded: (expanded: boolean) => {
+          set({ agentPanelExpanded: expanded })
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(
+              AGENT_PANEL_EXPANDED_STORAGE_KEY,
+              String(expanded),
+            )
+          }
+        },
         loadCities: (cities: Record<string, City>) => {
           const currentState = get()
 
@@ -671,7 +736,7 @@ export const useAppStore = create(
             )
           }
         },
-        setAlerts: (alerts: RouteAlert[] | RouteAlertWithPosition[]) =>
+        setAlerts: (alerts: RouteAlert[] | RouteAlertWithPosition[] | null) =>
           set({ alerts: alerts }),
 
         setRef: (name, ref) => set({ refs: { ...get().refs, [name]: ref } }),
@@ -1816,7 +1881,7 @@ export const useAppStore = create(
             },
           }),
 
-        setMapData: (data: MapData) => set({ mapData: data }),
+        setMapData: (data: MapData | null) => set({ mapData: data }),
         setShouldUseGreyRoutes: (shouldUse: boolean) =>
           set({ shouldUseGreyRoutes: shouldUse }),
         setTimeReplayState: (state: Partial<AppState["timeReplayState"]>) => {

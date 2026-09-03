@@ -35,6 +35,8 @@ import RealtimeMonitoringPage from "../../usecases/realtime-monitoring/page"
 import { RouteReliabilityPage } from "../../usecases/route-reliability/page"
 import Loader from "./loader"
 import UnifiedMap from "./unified-map"
+import { AgentSidePanel } from "../../components/agent-side-panel"
+import { getEffectivePanelWidth } from "../../components/agent-side-panel/layout"
 
 const mapReveal = keyframes`
   0% {
@@ -88,12 +90,22 @@ const DemoContent: React.FC = () => {
   const usecase = useAppStore((state) => state.usecase)
   const selectedCity = useAppStore((state) => state.selectedCity)
   const timeFilters = useAppStore((state) => state.timeFilters)
+  const activeTab = useAppStore((state) => state.activeTab)
+  const isAgentTab = activeTab === "agent"
+  const agentPanelWidth = useAppStore((state) => state.agentPanelWidth)
+  const agentPanelExpanded = useAppStore((state) => state.agentPanelExpanded)
+  const effectivePanelWidth = getEffectivePanelWidth(
+    agentPanelWidth,
+    agentPanelExpanded,
+  )
+  const setAlerts = useAppStore((state) => state.setAlerts)
+  const setMapData = useAppStore((state) => state.setMapData)
   const { resetMapData, resetSelectedRoute } = useMapContext()
   const [isResetting, setIsResetting] = useState(false)
 
-  useRealtimeData(selectedCity?.id ?? "", !!selectedCity)
-  useHistoricalData(selectedCity, timeFilters)
-  useRawHistoricalData(selectedCity, timeFilters)
+  useRealtimeData(selectedCity?.id ?? "", !!selectedCity && !isAgentTab)
+  useHistoricalData(selectedCity, timeFilters, !isAgentTab)
+  useRawHistoricalData(selectedCity, timeFilters, !isAgentTab)
   // Calculate and set zoom level if city doesn't have one
   useAutoZoom(selectedCity)
 
@@ -104,19 +116,40 @@ const DemoContent: React.FC = () => {
     // Reset map data and selected route
     resetMapData()
     resetSelectedRoute()
-    setIsResetting(false)
 
-    // return () => clearTimeout(timer)
-  }, [usecase, selectedCity.id, resetMapData, resetSelectedRoute])
+    // Globally clean multi-tab map artifacts on context switch
+    setAlerts(null)
+
+    setIsResetting(false)
+  }, [usecase, selectedCity.id, activeTab, resetMapData, resetSelectedRoute, setAlerts])
+
+  // Clear rendered routes when switching between the dashboard and agent tabs
+  useEffect(() => {
+    setMapData(null)
+  }, [activeTab, setMapData])
 
   return (
     <DemoContainer>
-      <MapContainer>
+      <MapContainer
+        sx={{
+          ...(isAgentTab
+            ? {
+                left: { xs: 0, md: `${effectivePanelWidth}px` },
+                width: {
+                  xs: "100%",
+                  md: `calc(100% - ${effectivePanelWidth}px)`,
+                },
+                transition:
+                  "left 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+              }
+            : {}),
+        }}
+      >
         {/* Persistent map container */}
         <UnifiedMap />
 
         {/* Usecase-specific components as overlays for additional UI/logic */}
-        {!isResetting && (
+        {!isAgentTab && !isResetting && (
           <UsecaseOverlay>
             {(usecase === "realtime-monitoring" ||
               usecase === "data-analytics") && <RealtimeMonitoringPage />}
@@ -124,21 +157,28 @@ const DemoContent: React.FC = () => {
           </UsecaseOverlay>
         )}
       </MapContainer>
-      <FloatingPanel />
-      <RightFloatingPanel />
-      <MapViewController />
-      <QuickCompareButton />
-      <ComparisonModeControls />
-      <Box
-        sx={{
-          display: "block",
-          "@media (max-width: 1240px)": {
-            display: "none", // Hide on mobile since it's now in settings panel
-          },
-        }}
-      >
-        <TimeReplayControls isVisible={true} />
-      </Box>
+
+      {isAgentTab ? (
+        <AgentSidePanel />
+      ) : (
+        <>
+          <FloatingPanel />
+          <RightFloatingPanel />
+          <MapViewController />
+          <QuickCompareButton />
+          <ComparisonModeControls />
+          <Box
+            sx={{
+              display: "block",
+              "@media (max-width: 1240px)": {
+                display: "none", // Hide on mobile since it's now in settings panel
+              },
+            }}
+          >
+            <TimeReplayControls isVisible={true} />
+          </Box>
+        </>
+      )}
     </DemoContainer>
   )
 }

@@ -20,6 +20,18 @@ export const convertToGeoJSON = (inputData: any) => {
     return inputData
   }
 
+  // If inputData is an array of already-formed GeoJSON Features
+  if (
+    Array.isArray(inputData) &&
+    inputData.length > 0 &&
+    inputData[0]?.type === "Feature"
+  ) {
+    return {
+      type: "FeatureCollection",
+      features: inputData,
+    }
+  }
+
   // If data is an array of segments, convert to GeoJSON
   if (Array.isArray(inputData)) {
     return {
@@ -32,11 +44,15 @@ export const convertToGeoJSON = (inputData: any) => {
             return null
           }
 
+          if (segment.type === "Feature" && segment.geometry) {
+            return segment
+          }
+
           return {
             type: "Feature",
             properties: {
               id: segment.id || "unknown",
-              name: segment.routeId || segment.id || "unknown",
+              name: segment.name || segment.routeId || segment.id || "unknown",
               color: segment.color || "#000000",
               delay: segment.delayTime || 0,
               delayRatio: segment.delayRatio || 0,
@@ -48,7 +64,9 @@ export const convertToGeoJSON = (inputData: any) => {
             geometry: {
               type: "LineString",
               coordinates:
-                segment.path?.map((point: any) => [point.lng, point.lat]) || [],
+                segment.path?.map((point: any) =>
+                  Array.isArray(point) ? point : [point.lng, point.lat]
+                ) || [],
             },
           }
         })

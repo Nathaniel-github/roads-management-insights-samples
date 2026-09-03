@@ -2,3 +2,17 @@
 .env
 .venv
 **/.DS_Store
+
+# Python tooling caches (agent backend)
+.poetry_cache/
+.poetry_config/
+.pytest_cache/
+vendor/
+requirements.txt
+
+# Internal-only deploy tooling (never commit to this public repo)
+DEPLOYMENT_INTERNAL.md
+Dockerfile.internal
+cloudbuild.internal.yaml
+deploy-internal.sh
+.dockerignore
